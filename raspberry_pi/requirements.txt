@@ -1,0 +1,23 @@
+# Core / API
+fastapi>=0.110
+uvicorn[standard]>=0.29
+httpx>=0.27
+python-dotenv>=1.0
+pydantic>=2.6
+python-multipart>=0.0.9
+
+# Vision (phase 4-5). Headless OpenCV: no GUI libs needed on the Pi.
+numpy>=1.26
+opencv-contrib-python-headless>=4.9   # contrib build includes ArUco
+ultralytics>=8.3
+
+# Voice (phase 6). On the Pi first run: sudo apt install libportaudio2
+sounddevice>=0.4
+
+# Patient analysis (phase 7-9)
+pandas>=2.2
+scikit-learn>=1.4
+
+# LLM (phase 10)
+openai>=1.30
+anthropic>=0.30

@@ -1,0 +1,13 @@
+{
+  "_comment": "The ONLY arm positions the Pi may request. The ESP32 firmware owns the actual servo angles for each name. The Pi never sends angles or PWM values.",
+  "poses": ["HOME", "SAFE", "USER", "MEDICINE", "WATER", "PHONE", "SPOON"],
+  "home_pose": "HOME",
+  "safe_pose": "SAFE",
+  "return_pose": "USER",
+  "object_to_pose": {
+    "medicine": "MEDICINE",
+    "water": "WATER",
+    "phone": "PHONE",
+    "spoon": "SPOON"
+  }
+}

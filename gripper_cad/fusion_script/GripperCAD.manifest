@@ -1,0 +1,10 @@
+{
+  "autodeskProduct": "Fusion",
+  "type": "script",
+  "author": "",
+  "description": {
+    "": "Builds the 2-jaw pivot gripper from params.json and exports STL + STEP"
+  },
+  "supportedOS": "windows|mac",
+  "editEnabled": true
+}

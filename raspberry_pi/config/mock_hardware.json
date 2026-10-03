@@ -1,0 +1,17 @@
+{
+  "_comment": "SIMULATED values used only when MOCK_HARDWARE=true. These are NOT real patient readings; every mock result is tagged source=MOCK.",
+  "controller_available": true,
+  "latency_s": 0.02,
+  "move_duration_s": 0.1,
+  "heartbeat": {
+    "bpm_center": 72,
+    "bpm_jitter": 4,
+    "raw_min": 1800,
+    "raw_max": 2600
+  },
+  "imu": {
+    "gravity_g": 1.0,
+    "accel_noise_g": 0.02,
+    "gyro_noise_dps": 1.5
+  }
+}

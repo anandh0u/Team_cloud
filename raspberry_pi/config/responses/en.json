@@ -1,0 +1,6 @@
+{
+  "_comment": "Spoken/returned phrases for ASSISTANT_LANGUAGE=en. Add ml.json, hi.json with the same keys for other languages.",
+  "arm_unavailable": "The robotic arm is currently unavailable.",
+  "arm_command_rejected": "The robotic arm could not do that right now.",
+  "arm_pose_not_allowed": "I can't move the arm to that position."
+}

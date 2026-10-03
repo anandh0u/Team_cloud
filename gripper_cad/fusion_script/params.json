@@ -1,0 +1,27 @@
+{
+  "_units": "all lengths in mm; X = gripper length, Y = width, Z = up; plate underside at Z=0",
+
+  "plate_length": 100,
+  "plate_width": 30,
+  "plate_thickness": 8,
+  "center_hole_dia": 8,
+  "mount_hole_dia": 5,
+  "mount_hole_spacing_x": 28,
+  "mount_hole_spacing_y": 15,
+
+  "lug_length": 16,
+  "lug_drop": 16,
+  "pivot_from_end": 8,
+  "pivot_below_plate": 8,
+  "pin_hole_dia_lug": 3.2,
+  "pin_hole_dia_jaw": 3.5,
+
+  "jaw_width": 17,
+  "jaw_side_clearance": 0.4,
+  "jaw_head_radius": 7,
+  "jaw_inner_gap": 60,
+  "jaw_total_height": 50,
+  "jaw_tip_thickness": 6,
+
+  "output_dir": "C:/Users/Acer/gripper-cad/export"
+}
