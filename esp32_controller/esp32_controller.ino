@@ -37,6 +37,42 @@ static void onWifiConnected() {
 #endif
 }
 
+// Logs why the access point refused or dropped us, so Wi-Fi problems are diagnosable
+// from the Serial Monitor instead of guessed at.
+static void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+  if (event != ARDUINO_EVENT_WIFI_STA_DISCONNECTED) return;
+  const uint8_t reason = info.wifi_sta_disconnected.reason;
+  const char *hint = "";
+  switch (reason) {
+    case WIFI_REASON_NO_AP_FOUND: hint = " (network not found: check WIFI_SSID and that it is 2.4 GHz)"; break;
+    case WIFI_REASON_AUTH_FAIL:
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_HANDSHAKE_TIMEOUT: hint = " (likely wrong WIFI_PASSWORD)"; break;
+    case WIFI_REASON_ASSOC_FAIL:
+    case WIFI_REASON_ASSOC_TOOMANY: hint = " (access point refused: device limit or block list?)"; break;
+    default: break;
+  }
+  Serial.printf("[WIFI] disconnected, reason %u%s\n", reason, hint);
+}
+
+// Lists the networks the ESP32 can actually hear. Used when connecting fails, so
+// "network not found" can be told apart from a name typo or weak reception.
+static void logVisibleNetworks() {
+  Serial.println("[WIFI] scanning for visible networks...");
+  WiFi.disconnect();
+  const int found = WiFi.scanNetworks();
+  if (found <= 0) {
+    Serial.printf("[WIFI] scan found no networks (result %d)\n", found);
+    return;
+  }
+  for (int i = 0; i < found; i++) {
+    Serial.printf("[WIFI]   \"%s\"  ch %d  %d dBm  auth %d%s\n", WiFi.SSID(i).c_str(), WiFi.channel(i),
+                  WiFi.RSSI(i), WiFi.encryptionType(i),
+                  WiFi.SSID(i) == WIFI_SSID ? "  <-- WIFI_SSID matches" : "");
+  }
+  WiFi.scanDelete();
+}
+
 static void startWifi() {
   wifiConfigured = strlen(WIFI_SSID) > 0;
   if (!wifiConfigured) {
@@ -44,6 +80,7 @@ static void startWifi() {
     return;
   }
 
+  WiFi.onEvent(onWifiEvent);
   WiFi.setHostname(DEVICE_NAME);  // must come before WiFi.mode()
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);  // lower, steadier latency for Pi commands
@@ -69,6 +106,8 @@ static void startWifi() {
   } else {
     Serial.printf("[ERROR] Wi-Fi not connected after %d ms (status %d). Retrying every %d ms in the background.\n",
                   WIFI_CONNECT_TIMEOUT_MS, WiFi.status(), WIFI_RETRY_INTERVAL_MS);
+    logVisibleNetworks();
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
   lastWifiRetryMs = millis();
 }
@@ -86,9 +125,12 @@ static void maintainWifi() {
   }
   wifiWasConnected = connected;
 
+  // WiFi.reconnect() errors out ("sta is connecting") while an attempt is still in
+  // progress, so restart the attempt cleanly instead.
   if (!connected && millis() - lastWifiRetryMs >= WIFI_RETRY_INTERVAL_MS) {
     Serial.println("[WIFI] reconnecting...");
-    WiFi.reconnect();
+    WiFi.disconnect();
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     lastWifiRetryMs = millis();
   }
 }
