@@ -1,0 +1,77 @@
+{
+  "_comment": "Deterministic intent rules for ASSISTANT_LANGUAGE=en. Text is lower-cased, punctuation removed and contractions expanded before matching. Patterns must match the WHOLE utterance (after filler words are trimmed); {object}, {contact} and {message} capture text. Add ml.json / hi.json with the same keys for other languages.",
+
+  "contractions": {
+    "where's": "where is",
+    "what's": "what is",
+    "i'm": "i am",
+    "can't": "cannot",
+    "don't": "do not",
+    "i've": "i have"
+  },
+
+  "filler_start": ["please", "hey", "hi", "hello", "ok", "okay", "can you", "could you", "would you", "will you", "assistant", "robot"],
+  "filler_end": ["please", "for me", "now", "thanks", "thank you"],
+
+  "emergency_exact": ["help", "help me", "help help", "sos", "emergency"],
+  "emergency_contains": ["i need help", "emergency", "call caregiver", "call my caregiver", "call the caregiver", "call a nurse", "call the nurse", "i fell", "i have fallen", "somebody help", "someone help"],
+
+  "_emergency_call_contacts": "Calling any of these contacts is treated as an EMERGENCY, not a normal call.",
+  "emergency_call_contacts": ["caregiver"],
+
+  "stop_words": ["stop", "halt", "freeze"],
+  "home_phrases": ["go home", "arm home", "home position", "reset the arm", "move the arm home", "put the arm back"],
+  "status_phrases": ["what is my status", "my status", "status", "how am i doing", "system status"],
+
+  "message_patterns": [
+    "tell my {contact} that {message}",
+    "tell my {contact} {message}",
+    "tell {contact} that {message}",
+    "tell {contact} {message}",
+    "message my {contact} {message}",
+    "send my {contact} a message saying {message}",
+    "send a message to my {contact} saying {message}",
+    "send my {contact} a message",
+    "send a message to my {contact}",
+    "message my {contact}"
+  ],
+  "call_patterns": ["call my {contact}", "call {contact}", "phone my {contact}", "ring my {contact}"],
+  "find_patterns": ["where is my {object}", "where is the {object}", "where are my {object}", "find my {object}", "find the {object}", "can you see my {object}", "do you see my {object}"],
+  "get_patterns": [
+    "i need my {object}",
+    "i need {object}",
+    "i want my {object}",
+    "i want {object}",
+    "bring my {object} closer",
+    "bring me my {object}",
+    "bring my {object}",
+    "bring me {object}",
+    "get my {object}",
+    "get me my {object}",
+    "get me {object}",
+    "give me my {object}",
+    "give me {object}",
+    "pass me my {object}",
+    "pass my {object}"
+  ],
+
+  "objects": {
+    "phone": ["phone", "mobile", "cell phone", "cellphone", "mobile phone"],
+    "medicine": ["medicine", "medicines", "medication", "tablet", "tablets", "pill", "pills"],
+    "water": ["water", "drink", "water bottle", "bottle"],
+    "spoon": ["spoon"],
+    "cup": ["cup", "mug", "glass"],
+    "remote": ["remote", "tv remote", "remote control"]
+  },
+
+  "contacts": {
+    "son": ["son"],
+    "daughter": ["daughter"],
+    "caregiver": ["caregiver", "carer", "nurse"],
+    "wife": ["wife"],
+    "husband": ["husband"],
+    "doctor": ["doctor"]
+  },
+
+  "default_message": "Please check on me when you can."
+}

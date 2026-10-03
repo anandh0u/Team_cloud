@@ -4,15 +4,54 @@ Hackathon prototype. **Not a medical device.** It does not diagnose anything, an
 heartbeat readings come from a hobby sensor, so they are not clinically accurate.
 
 The Pi is the main brain. The ESP32 controller (arm, gripper, heartbeat, MPU6050)
-and the ESP32 camera are separate projects that this code talks to over HTTP.
+is a separate project that this code talks to over HTTP. A **phone on a bedside
+stand** replaces a separate camera, microphone and speaker: it opens a web page
+served by the Pi, sends voice + a photo with each command, and plays the reply.
 
 ## Status
 
 | Phase | What | State |
 |---|---|---|
 | 1 | Structure, config, logging, `GET /health` | done |
-| 2 | ESP32 controller client, telemetry parsing, arm actions, mock hardware | done |
-| 3–12 | Assistant, camera, YOLO, Sarvam, SQLite, analysis, LLM, caregiver comms | not started |
+| 2 | ESP32 controller client, telemetry, arm actions, mock hardware, all hardware routes | done |
+| 3 | Intent parser, emergency handling, assistant text API, caregiver comms (MOCK backend) | done |
+| next | Phone web page (voice + photo in, spoken reply out) | not started |
+| later | YOLO on phone photos, Sarvam STT/TTS, SQLite, routine analysis, LLM summaries, real messaging | not started |
+
+## API (current)
+
+| Method | Path | What |
+|---|---|---|
+| GET | `/health` | API up + ESP32 reachability |
+| GET | `/status` | ESP32 status, allowed poses |
+| GET | `/telemetry` | heartbeat, IMU, arm, gripper, emergency_stop (unavailable sections are `null` + listed in `errors`) |
+| POST | `/assistant/text` | `{"text": "Where is my phone?"}` returns action + spoken `response` |
+| POST | `/find-object` | `{"object": "phone"}` |
+| POST | `/arm/pose` | `{"pose": "MEDICINE"}`: 200 ok, 422 unknown pose, 409 refused by ESP32, 503 unreachable |
+| POST | `/arm/home`, `/arm/stop`, `/arm/resume` | resume is never automatic |
+| POST | `/caregiver/message` | `{"contact": "son", "message": "..."}` |
+| POST | `/caregiver/call` | `{"contact": "son"}` |
+| POST | `/emergency` | stops the arm and alerts the caregiver in parallel |
+
+## How commands are understood
+
+`config/intents/en.json` holds every phrase and pattern. Matching is fully local and
+deterministic, checked in this order:
+
+**EMERGENCY > STOP > HOME > STATUS > MESSAGE > CALL > FIND > GET > UNKNOWN**
+
+- Emergency phrases always win. "Help me find my phone" is **not** an emergency
+  (bare "help" must be the whole sentence), but "I need help" anywhere is.
+- "Tell my daughter I need help" is an emergency **and** the message still goes to her.
+- Calling the caregiver is treated as an emergency.
+- Unknown objects and contacts stay `null`; they are never guessed.
+- An LLM (later phase) will only ever see sentences that end up `UNKNOWN`.
+
+On EMERGENCY the arm stop and the caregiver alert run **at the same time**, so an
+unreachable ESP32 can't delay the alert. The reply only says "I am contacting your
+caregiver" if the alert actually went out.
+
+`COMMUNICATION_BACKEND=MOCK` only **logs** messages, calls and alerts; nothing is sent yet.
 
 ## Setup
 
@@ -88,8 +127,8 @@ Not yet confirmed by the firmware team. The Pi currently assumes:
 | POST | `/resume` | `{"ok": true, "emergency_stop": false}` |
 | GET | `/health`, `/status` | any 2xx JSON |
 | (any) | refusal | `{"ok": false, "error": "reason"}` (any HTTP status) |
-| (in telemetry) | `heartbeat` | `{"raw": 2048, "bpm": 72.5}`; `bpm` may be `null` when there is no pulse |
-| (in telemetry) | `imu` | `{"ax":0,"ay":0,"az":1,"gx":0,"gy":0,"gz":0}`: acceleration in g, rotation in deg/s |
+| (in telemetry) | `heartbeat` | `{"available": true, "raw": 520, "bpm_estimate": 76}`; `{"available": false}` if the sensor failed |
+| (in telemetry) | `imu` | `{"available": true, "ax":0.04, "ay":0.18, "az":9.74, "gx":1.1, "gy":0.2, "gz":-0.4, "movement_score":0.27}`: acceleration in **m/s²**, rotation in deg/s |
 | (in telemetry) | `arm` | any object; stored as received |
 
 Safety requirements on the firmware:

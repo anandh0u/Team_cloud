@@ -29,19 +29,21 @@ class ControllerResult(BaseModel):
 
 
 class HeartbeatReading(BaseModel):
-    """Hobby pulse sensor output. bpm is a rough estimate, not a clinical measurement."""
+    """Hobby pulse sensor output (ESP32 contract). bpm_estimate is a rough estimate,
+    not a clinical measurement."""
     raw: int
-    bpm: float | None = None
+    bpm_estimate: float | None = None
 
 
 class ImuReading(BaseModel):
-    """MPU6050 sample: acceleration in g, rotation in degrees/second."""
+    """MPU6050 sample (ESP32 contract): acceleration in m/s², rotation in degrees/second."""
     ax: float
     ay: float
     az: float
     gx: float
     gy: float
     gz: float
+    movement_score: float | None = None
 
 
 class TelemetrySnapshot(BaseModel):
@@ -64,6 +66,54 @@ class ArmActionResult(BaseModel):
     pose: str | None = None
     message: str | None = None  # user-facing phrase when the action did not happen
     controller: ControllerResult | None = None
+
+
+class Action(str, Enum):
+    FIND_OBJECT = "FIND_OBJECT"
+    GET_OBJECT = "GET_OBJECT"
+    CALL_CONTACT = "CALL_CONTACT"
+    MESSAGE_CONTACT = "MESSAGE_CONTACT"
+    EMERGENCY = "EMERGENCY"
+    STOP = "STOP"
+    HOME = "HOME"
+    STATUS = "STATUS"
+    UNKNOWN = "UNKNOWN"
+
+
+class Intent(BaseModel):
+    action: Action
+    object: str | None = None
+    contact: str | None = None
+    message: str | None = None
+    parser: Literal["rules", "llm"] = "rules"
+    matched: str | None = None  # the phrase/pattern that triggered this intent
+    text: str = ""
+
+
+class AssistantResponse(BaseModel):
+    action: Action
+    ok: bool
+    response: str  # what is spoken back to the user
+    object: str | None = None
+    contact: str | None = None
+    message: str | None = None
+    details: dict[str, Any] = {}
+
+
+class CommResult(BaseModel):
+    ok: bool
+    kind: Literal["message", "call", "emergency_alert"]
+    contact: str
+    backend: str
+    error: str | None = None
+
+
+class EmergencyResult(BaseModel):
+    arm_stopped: bool
+    caregiver_alerted: bool
+    response: str
+    arm: ArmActionResult
+    alert: CommResult
 
 
 class ComponentHealth(BaseModel):

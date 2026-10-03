@@ -1,6 +1,8 @@
 """Reads telemetry from the controller's GET /telemetry:
 
-    {"heartbeat": {...}, "imu": {...}, "arm": {...}, "gripper": "OPEN", "emergency_stop": false}
+    {"heartbeat": {"available": true, "raw": 520, "bpm_estimate": 76},
+     "imu": {"available": true, "ax": 0.04, ..., "az": 9.74, ..., "movement_score": 0.27},
+     "arm": {"pose": "HOME", "moving": false}, "gripper": "OPEN", "emergency_stop": false}
 
 Each section is parsed on its own: a missing or malformed section becomes None
 and is listed in `errors`, so one bad sensor doesn't hide the others. If the
@@ -23,6 +25,10 @@ logger = get_logger(__name__)
 def _section(data: dict[str, Any], key: str, model: type[BaseModel], errors: list[str]):
     if key not in data or data[key] is None:
         errors.append(f"{key}: missing")
+        return None
+    # The ESP32 reports a failed sensor as {"available": false} and keeps everything else running.
+    if isinstance(data[key], dict) and data[key].get("available") is False:
+        errors.append(f"{key}: sensor unavailable")
         return None
     try:
         return model.model_validate(data[key])
@@ -65,7 +71,7 @@ class TelemetryService:
 
         src = result.source.value
         if heartbeat:
-            logger.info("heartbeat raw=%d bpm=%s source=%s", heartbeat.raw, heartbeat.bpm, src)
+            logger.info("heartbeat raw=%d bpm_estimate=%s source=%s", heartbeat.raw, heartbeat.bpm_estimate, src)
         if imu:
             logger.info("imu a=(%.3f, %.3f, %.3f) g=(%.2f, %.2f, %.2f) source=%s",
                         imu.ax, imu.ay, imu.az, imu.gx, imu.gy, imu.gz, src)

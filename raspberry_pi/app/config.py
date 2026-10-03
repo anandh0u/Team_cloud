@@ -15,6 +15,9 @@ from pydantic import BaseModel, ConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+# Backend names the code knows how to build (see app/communication/caregiver.py).
+COMMUNICATION_BACKENDS = ("MOCK", "WEBHOOK", "ANDROID_GATEWAY")
+
 
 class ConfigError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
@@ -73,6 +76,12 @@ class Settings(BaseModel):
     esp32_http_retries: int
     esp32_retry_backoff_s: float
 
+    communication_backend: str
+
+    @property
+    def intents_path(self) -> Path:
+        return self.catalog_dir / "intents" / f"{self.assistant_language}.json"
+
     @property
     def pose_catalog_path(self) -> Path:
         return self.catalog_dir / "poses.json"
@@ -105,6 +114,11 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         if not controller_url.startswith(("http://", "https://")) or "x.x" in controller_url:
             raise ConfigError(f"ESP32_CONTROLLER_URL is not a usable URL: {controller_url!r}")
 
+    communication_backend = _require(env, "COMMUNICATION_BACKEND").upper()
+    if communication_backend not in COMMUNICATION_BACKENDS:
+        raise ConfigError(f"COMMUNICATION_BACKEND must be one of {', '.join(COMMUNICATION_BACKENDS)}, "
+                          f"got {communication_backend!r}")
+
     catalog_dir = _path(_require(env, "CATALOG_DIR"))
     if not catalog_dir.is_dir():
         raise ConfigError(f"CATALOG_DIR {catalog_dir} does not exist")
@@ -120,4 +134,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         esp32_http_timeout_s=_number("ESP32_HTTP_TIMEOUT_S", _require(env, "ESP32_HTTP_TIMEOUT_S"), float, 0.1),
         esp32_http_retries=_number("ESP32_HTTP_RETRIES", _require(env, "ESP32_HTTP_RETRIES"), int, 0),
         esp32_retry_backoff_s=_number("ESP32_RETRY_BACKOFF_S", _require(env, "ESP32_RETRY_BACKOFF_S"), float, 0),
+        communication_backend=communication_backend,
     )

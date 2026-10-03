@@ -1,6 +1,33 @@
 {
-  "_comment": "Spoken/returned phrases for ASSISTANT_LANGUAGE=en. Add ml.json, hi.json with the same keys for other languages.",
+  "_comment": "Spoken/returned phrases for ASSISTANT_LANGUAGE=en. Add ml.json, hi.json with the same keys for other languages. Never add diagnostic or alarming medical wording here.",
+
   "arm_unavailable": "The robotic arm is currently unavailable.",
-  "arm_command_rejected": "The robotic arm could not do that right now.",
-  "arm_pose_not_allowed": "I can't move the arm to that position."
+  "arm_command_rejected": "The robotic arm could not do that at the moment.",
+  "arm_pose_not_allowed": "I can't move the arm to that position.",
+
+  "emergency_contacting": "I am contacting your caregiver.",
+  "emergency_alert_failed": "I could not reach your caregiver. Please call out for help.",
+  "emergency_alert_message": "Help was requested at the bedside assistant. Please check on the patient.",
+
+  "stop_done": "I have stopped the arm.",
+  "stop_failed": "I could not reach the arm to stop it. Please keep clear of it.",
+  "home_done": "The arm is back in its home position.",
+
+  "find_no_camera": "My camera isn't working at the moment, so I can't tell where your {object} is.",
+  "object_unknown": "Sorry, I don't know that object yet.",
+  "get_done": "Here is your {object}.",
+  "get_no_pose": "I can't fetch your {object} with the arm.",
+
+  "call_started": "I am calling your {contact}.",
+  "message_sent": "I have sent your message to your {contact}.",
+  "contact_unknown": "Sorry, I don't know who that is.",
+  "comm_failed": "Sorry, I couldn't reach your {contact}.",
+
+  "status_unavailable": "I can't read the sensors at the moment.",
+  "status_arm": "The arm is at the {pose} position.",
+  "status_arm_stopped": "The arm is stopped for safety. A caregiver can switch it back on.",
+  "status_pulse": "The pulse sensor reads about {bpm} beats per minute. This is not a medical measurement.",
+  "status_no_pulse": "The pulse sensor has no reading right now.",
+
+  "unknown": "Sorry, I didn't understand. You can say things like: where is my phone, I need water, or help."
 }

@@ -10,8 +10,9 @@
     "raw_max": 2600
   },
   "imu": {
-    "gravity_g": 1.0,
-    "accel_noise_g": 0.02,
-    "gyro_noise_dps": 1.5
+    "gravity_ms2": 9.81,
+    "accel_noise_ms2": 0.2,
+    "gyro_noise_dps": 1.5,
+    "movement_score_max": 0.3
   }
 }

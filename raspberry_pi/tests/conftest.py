@@ -4,7 +4,10 @@ import random
 
 import pytest
 
+from app.assistant.intent import IntentCatalog, IntentParser
 from app.assistant.responses import Responses
+from app.communication.caregiver import CaregiverService
+from app.communication.mock import MockChannel
 from app.catalog import load_json_catalog
 from app.config import PROJECT_ROOT, load_settings
 from app.hardware.mock_controller import MockEsp32Client
@@ -26,6 +29,7 @@ def env() -> dict[str, str]:
         "ESP32_HTTP_TIMEOUT_S": "0.5",
         "ESP32_HTTP_RETRIES": "2",
         "ESP32_RETRY_BACKOFF_S": "0",
+        "COMMUNICATION_BACKEND": "MOCK",
     }
 
 
@@ -55,3 +59,23 @@ def mock_catalog(settings) -> dict:
 @pytest.fixture
 def mock_client(mock_catalog, poses) -> MockEsp32Client:
     return MockEsp32Client(mock_catalog, poses, rng=random.Random(0))
+
+
+@pytest.fixture
+def intents(settings) -> IntentCatalog:
+    return IntentCatalog.load(settings.intents_path)
+
+
+@pytest.fixture
+def parser(intents) -> IntentParser:
+    return IntentParser(intents)
+
+
+@pytest.fixture
+def channel() -> MockChannel:
+    return MockChannel()
+
+
+@pytest.fixture
+def caregiver(channel, intents) -> CaregiverService:
+    return CaregiverService(channel, intents.emergency_contact)

@@ -25,7 +25,8 @@ class MockEsp32Client:
                      "mock_hardware.json")
         require_keys(catalog["heartbeat"], ["bpm_center", "bpm_jitter", "raw_min", "raw_max"],
                      "mock_hardware.json heartbeat")
-        require_keys(catalog["imu"], ["gravity_g", "accel_noise_g", "gyro_noise_dps"], "mock_hardware.json imu")
+        require_keys(catalog["imu"], ["gravity_ms2", "accel_noise_ms2", "gyro_noise_dps", "movement_score_max"],
+                     "mock_hardware.json imu")
 
         self.available: bool = catalog["controller_available"]
         self._latency_s = catalog["latency_s"]
@@ -58,20 +59,23 @@ class MockEsp32Client:
                                 data=data, latency_ms=latency)
 
     def _status(self) -> dict[str, Any]:
-        return {"arm": {"pose": self.pose}, "gripper": self.gripper,
+        return {"arm": {"pose": self.pose, "moving": False}, "gripper": self.gripper,
                 "emergency_stop": self.emergency_stop, "mock": True}
 
     def _heartbeat(self) -> dict[str, Any]:
         bpm = self._hb["bpm_center"] + self._rng.uniform(-self._hb["bpm_jitter"], self._hb["bpm_jitter"])
-        return {"raw": self._rng.randint(self._hb["raw_min"], self._hb["raw_max"]), "bpm": round(bpm, 1)}
+        return {"available": True, "raw": self._rng.randint(self._hb["raw_min"], self._hb["raw_max"]),
+                "bpm_estimate": round(bpm, 1)}
 
-    def _imu_sample(self) -> dict[str, float]:
-        a, g = self._imu["accel_noise_g"], self._imu["gyro_noise_dps"]
+    def _imu_sample(self) -> dict[str, Any]:
+        a, g = self._imu["accel_noise_ms2"], self._imu["gyro_noise_dps"]
         gauss = self._rng.gauss
         return {
-            "ax": round(gauss(0, a), 4), "ay": round(gauss(0, a), 4),
-            "az": round(self._imu["gravity_g"] + gauss(0, a), 4),
+            "available": True,
+            "ax": round(gauss(0, a), 3), "ay": round(gauss(0, a), 3),
+            "az": round(self._imu["gravity_ms2"] + gauss(0, a), 3),
             "gx": round(gauss(0, g), 3), "gy": round(gauss(0, g), 3), "gz": round(gauss(0, g), 3),
+            "movement_score": round(self._rng.uniform(0, self._imu["movement_score_max"]), 3),
         }
 
     async def health(self) -> ControllerResult:

@@ -30,7 +30,7 @@ def test_mock_replies_match_firmware_contract(mock_client):
 def test_mock_heartbeat_stays_in_configured_range(mock_client, mock_catalog):
     hb = mock_catalog["heartbeat"]
     for _ in range(50):
-        bpm = run(mock_client.heartbeat()).data["bpm"]
+        bpm = run(mock_client.heartbeat()).data["bpm_estimate"]
         assert hb["bpm_center"] - hb["bpm_jitter"] <= bpm <= hb["bpm_center"] + hb["bpm_jitter"]
 
 
