@@ -29,6 +29,13 @@ class ArmService:
                     action, pose, res.ok, res.error, res.source.value)
         return ArmActionResult(ok=res.ok, action=action, pose=pose, message=message, controller=res)
 
+    async def pose_calibrated(self, pose: str) -> bool | None:
+        """Whether the controller has calibrated angles for `pose` (firmware 0.3+ reports this
+        in /status). None = unknown (older firmware, simulator, or no answer)."""
+        status = await self._client.status()
+        calibrated = (status.data or {}).get("calibrated") if status.ok else None
+        return calibrated.get(pose.upper()) if isinstance(calibrated, dict) else None
+
     async def move_to_pose(self, pose: str) -> ArmActionResult:
         pose = pose.strip().upper()
         if not self.poses.is_allowed(pose):

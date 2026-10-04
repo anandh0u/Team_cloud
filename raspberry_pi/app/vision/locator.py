@@ -57,16 +57,16 @@ class SceneLocator:
     async def describe_location(self, obj: str) -> ObjectLocation:
         labels = self._labels.get(obj) or []
         if not labels:
-            return ObjectLocation(seen=False, response=self._r.get("find_not_trained", object=obj))
+            return ObjectLocation(seen=False, reason="not_trained", response=self._r.get("find_not_trained", object=obj))
 
         age = self._clock() - self._scene_at
         if self._scene is None or age > self._max_age_s:
-            return ObjectLocation(seen=False, response=self._r.get("find_no_photo", object=obj))
+            return ObjectLocation(seen=False, reason="no_photo", response=self._r.get("find_no_photo", object=obj))
 
         scene = self._scene
         matches = [d for d in scene.detections if d.label in labels]
         if not matches:
-            return ObjectLocation(seen=False, response=self._r.get("find_not_seen", object=obj),
+            return ObjectLocation(seen=False, reason="not_seen", response=self._r.get("find_not_seen", object=obj),
                                   photo_age_s=round(age, 1))
 
         best = max(matches, key=lambda d: d.confidence)

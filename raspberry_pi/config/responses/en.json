@@ -32,6 +32,11 @@
   "object_unknown": "Sorry, I don't know that object yet.",
   "get_done": "Here is your {object}.",
   "get_no_pose": "I can't fetch your {object} with the arm.",
+  "get_done_seen": "I found your {object} {position} and brought it to you. Say let go when you're holding it.",
+  "get_not_seen": "I can't see your {object} on the table, so I didn't move the arm.",
+  "get_no_photo": "I don't have a recent picture of the table, so I didn't move the arm. Point the phone camera at the table and ask again.",
+  "release_done": "I have let go.",
+  "get_not_calibrated": "The arm hasn't been set up to reach your {object} yet, so I didn't move it.",
 
   "call_started": "I am calling your {contact}.",
   "message_sent": "I have sent your message to your {contact}.",

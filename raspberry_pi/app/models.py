@@ -76,6 +76,7 @@ class Action(str, Enum):
     EMERGENCY = "EMERGENCY"
     STOP = "STOP"
     HOME = "HOME"
+    RELEASE = "RELEASE"
     STATUS = "STATUS"
     UNKNOWN = "UNKNOWN"
 
@@ -150,6 +151,7 @@ class ObjectLocation(BaseModel):
     in a recent photo; `response` is the spoken phrase either way."""
     seen: bool
     response: str
+    reason: Literal["seen", "not_seen", "no_photo", "not_trained"] = "seen"
     label: str | None = None
     confidence: float | None = None
     position: Literal["left", "middle", "right"] | None = None

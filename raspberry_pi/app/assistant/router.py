@@ -24,6 +24,7 @@ RESPONSE_KEYS = (
     "stop_done", "stop_failed", "home_done", "find_no_camera", "object_unknown", "get_done",
     "get_no_pose", "call_started", "message_sent", "contact_unknown", "comm_failed",
     "status_unavailable", "status_arm", "status_arm_stopped", "status_pulse", "status_no_pulse", "unknown",
+    "get_done_seen", "get_not_seen", "get_no_photo", "release_done", "get_not_calibrated",
 )
 
 
@@ -54,6 +55,7 @@ class AssistantRouter:
             Action.EMERGENCY: self._emergency_action,
             Action.STOP: self._stop,
             Action.HOME: self._home,
+            Action.RELEASE: self._release,
             Action.STATUS: self._status,
             Action.FIND_OBJECT: self._find,
             Action.GET_OBJECT: self._get,
@@ -91,6 +93,11 @@ class AssistantRouter:
         return self._reply(intent, res.ok, self._r.get("home_done") if res.ok else res.message,
                            arm=res.model_dump(mode="json"))
 
+    async def _release(self, intent: Intent) -> AssistantResponse:
+        res = await self._arm.gripper_open()
+        return self._reply(intent, res.ok, self._r.get("release_done") if res.ok else res.message,
+                           arm=res.model_dump(mode="json"))
+
     # ------------------------------------------------------------------ objects
 
     async def _find(self, intent: Intent) -> AssistantResponse:
@@ -108,8 +115,21 @@ class AssistantRouter:
         if pose is None:
             return self._reply(intent, False, self._r.get("get_no_pose", object=intent.object))
 
+        # With a camera, only fetch what it can actually see on the table. Objects the
+        # model can't recognise (e.g. medicine) are fetched from their fixed spot unverified.
+        location = await self.locator.describe_location(intent.object) if self.locator else None
+        if location is not None and location.reason in ("not_seen", "no_photo"):
+            key = "get_not_seen" if location.reason == "not_seen" else "get_no_photo"
+            return self._reply(intent, False, self._r.get(key, object=intent.object),
+                               camera=location.model_dump(mode="json"), camera_verified=False)
+        verified = location is not None and location.seen
+
+        # Placeholder angles could swing the arm into something: only use calibrated poses.
+        if await self._arm.pose_calibrated(pose) is False:
+            return self._reply(intent, False, self._r.get("get_not_calibrated", object=intent.object),
+                               camera_verified=verified)
+
         # Fixed sequence, no free-form grasping: open -> object pose -> close -> hand to user.
-        # (Camera verification of the object is added with the phone camera.)
         steps: list[ArmActionResult] = []
         for step in (self._arm.gripper_open, lambda: self._arm.move_to_pose(pose), self._arm.gripper_close,
                      lambda: self._arm.move_to_pose(self._arm.poses.return_pose)):
@@ -117,9 +137,13 @@ class AssistantRouter:
             steps.append(res)
             if not res.ok:
                 return self._reply(intent, False, res.message, steps=[s.model_dump(mode="json") for s in steps],
-                                   camera_verified=False)
-        return self._reply(intent, True, self._r.get("get_done", object=intent.object),
-                           steps=[s.model_dump(mode="json") for s in steps], camera_verified=False)
+                                   camera_verified=verified)
+        done = (self._r.get("get_done_seen", object=intent.object,
+                            position=self._r.get(f"position_{location.position}"))
+                if verified else self._r.get("get_done", object=intent.object))
+        return self._reply(intent, True, done, steps=[s.model_dump(mode="json") for s in steps],
+                           camera_verified=verified,
+                           camera=location.model_dump(mode="json") if location else None)
 
     # ------------------------------------------------------------------ people
 

@@ -299,3 +299,69 @@ def test_slow_network_does_not_retry_speech(multilingual, voice):
     body = multilingual.post("/assistant/phone", files=AUDIO).json()
     assert body["reply_audio"] is None and body["reply_text"].startswith("[ml-IN]")  # the phone reads it
     assert voice.spoken == []
+
+
+# ---------------------------------------------------------------- camera-checked fetching
+
+@pytest.fixture
+def table(vision_settings, mock_client, voice):
+    """App whose camera sees a spoon on the left and a bottle on the right."""
+    detector = FakeDetector(scene(det("spoon", 20), det("bottle", 500)))
+    with TestClient(create_app(vision_settings, controller=mock_client, detector=detector, voice=voice)) as c:
+        yield c
+
+
+def say(client, text, photo=True):
+    return client.post("/assistant/phone", data={"text": text}, files=IMAGE if photo else None).json()["assistant"]
+
+
+def test_fetch_happens_only_when_the_camera_sees_the_object(table, mock_client, responses):
+    reply = say(table, "I want spoon")
+    assert reply["ok"] and reply["details"]["camera_verified"] is True
+    assert reply["response"] == responses.get("get_done_seen", object="spoon", position=responses.get("position_left"))
+    assert [s["action"] for s in reply["details"]["steps"]] == ["GRIPPER_OPEN", "POSE", "GRIPPER_CLOSE", "POSE"]
+    assert mock_client.pose == "USER" and mock_client.gripper == "CLOSED"
+
+
+def test_object_not_on_the_table_means_the_arm_does_not_move(table, mock_client, responses):
+    reply = say(table, "bring me my phone")
+    assert not reply["ok"] and reply["response"] == responses.get("get_not_seen", object="phone")
+    assert "steps" not in reply["details"] and mock_client.pose == "HOME"
+
+
+def test_no_recent_photo_means_the_arm_does_not_move(vision_settings, mock_client, voice, responses):
+    with TestClient(create_app(vision_settings, controller=mock_client, detector=FakeDetector(), voice=voice)) as c:
+        reply = say(c, "I want spoon", photo=False)
+    assert not reply["ok"] and reply["response"] == responses.get("get_no_photo", object="spoon")
+    assert mock_client.pose == "HOME"
+
+
+def test_objects_the_camera_cannot_recognise_are_fetched_unverified(table, responses):
+    reply = say(table, "I need my medicine")
+    assert reply["ok"] and reply["details"]["camera_verified"] is False
+    assert reply["response"] == responses.get("get_done", object="medicine")
+
+
+def test_let_go_opens_the_gripper(table, mock_client, responses):
+    say(table, "I want spoon")
+    reply = say(table, "ok I have it, let go")
+    assert reply["action"] == "RELEASE" and reply["ok"] and reply["response"] == responses.get("release_done")
+    assert mock_client.gripper == "OPEN"
+
+
+def test_release_is_refused_after_emergency_stop(table, mock_client):
+    say(table, "stop")
+    assert not say(table, "let go")["ok"]
+
+
+def test_uncalibrated_pose_is_never_used(table, mock_client, responses):
+    original = mock_client.status
+
+    async def status_with_calibration():
+        result = await original()
+        return result.model_copy(update={"data": {**result.data, "calibrated": {"SPOON": False}}})
+
+    mock_client.status = status_with_calibration
+    reply = say(table, "I want spoon")
+    assert not reply["ok"] and reply["response"] == responses.get("get_not_calibrated", object="spoon")
+    assert mock_client.pose == "HOME"

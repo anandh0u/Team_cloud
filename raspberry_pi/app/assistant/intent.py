@@ -37,6 +37,7 @@ class IntentCatalog(BaseModel):
     emergency_call_contacts: list[str]
     stop_words: list[str]
     home_phrases: list[str]
+    release_phrases: list[str]
     status_phrases: list[str]
     message_patterns: list[str]
     call_patterns: list[str]
@@ -154,6 +155,9 @@ class IntentParser:
         for p in c.home_phrases:
             if contains_phrase(norm, p):
                 return intent(Action.HOME, p)
+        for p in c.release_phrases:
+            if contains_phrase(norm, p):
+                return intent(Action.RELEASE, p)
         for p in c.status_phrases:
             if contains_phrase(norm, p):
                 return intent(Action.STATUS, p)

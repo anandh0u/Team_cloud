@@ -21,6 +21,9 @@
 
   "stop_words": ["stop", "halt", "freeze"],
   "home_phrases": ["go home", "arm home", "home position", "reset the arm", "move the arm home", "put the arm back"],
+  "release_phrases": ["let go", "release", "open the gripper", "open your hand", "drop it",
+                      "i have it", "i've got it", "i got it", "you can let go"],
+
   "status_phrases": ["what is my status", "my status", "status", "how am i doing", "system status"],
 
   "message_patterns": [
