@@ -6,7 +6,7 @@
 #pragma once
 
 // ---------------------------------------------------------------- Device
-#define FIRMWARE_VERSION "0.2.1"
+#define FIRMWARE_VERSION "0.3.0"
 // Used as the Wi-Fi hostname and mDNS name (http://<DEVICE_NAME>.local)
 #define DEVICE_NAME "esp32-controller"
 #define SERIAL_BAUD 115200
@@ -55,6 +55,7 @@
 
 // Named poses: the ONLY positions the Raspberry Pi can request. Names must match
 // raspberry_pi/config/poses.json exactly. Angles = {base, shoulder, elbow}.
+// These are defaults: set the real angles on http://<ESP32 IP>/calibrate (saved in flash).
 #define POSE_TABLE {                 \
   {"HOME",     {90, 90, 90}},        \
   {"SAFE",     {90, 120, 60}},       \

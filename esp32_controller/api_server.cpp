@@ -5,6 +5,7 @@
 #include <WiFi.h>
 
 #include "arm.h"
+#include "calibrate_page.h"
 #include "config.h"
 #include "sensors.h"
 
@@ -76,7 +77,8 @@ static void addArmState(JsonDocument &doc) {
 // arm is still. The server stays free the whole time, so /stop always gets through.
 static void replyMotion(ArmError err, const char *key, const char *value) {
   if (err != ArmError::None) {
-    int code = err == ArmError::UnknownPose ? 400 : err == ArmError::ConfigInvalid ? 500 : 409;
+    int code = err == ArmError::UnknownPose || err == ArmError::OutOfRange ? 400
+             : err == ArmError::ConfigInvalid ? 500 : 409;
     sendError(code, armErrorText(err));
     return;
   }
@@ -95,7 +97,76 @@ static void handleStatus() {
   doc["config_valid"] = armConfigValid();
   addArmState(doc);
   JsonArray poses = doc["poses"].to<JsonArray>();
-  for (int i = 0; i < armPoseCount(); i++) poses.add(armPoseNameAt(i));
+  JsonObject poseAngles = doc["pose_angles"].to<JsonObject>();
+  JsonObject calibrated = doc["calibrated"].to<JsonObject>();
+  for (int i = 0; i < armPoseCount(); i++) {
+    poses.add(armPoseNameAt(i));
+    JsonArray a = poseAngles[armPoseNameAt(i)].to<JsonArray>();
+    for (int j = 0; j < JOINT_COUNT; j++) a.add(roundf(armPoseAngle(i, j)));
+    calibrated[armPoseNameAt(i)] = armPoseCalibrated(i);
+  }
+  JsonArray names = doc["joint_names"].to<JsonArray>();
+  JsonArray limits = doc["limits"].to<JsonArray>();
+  for (int j = 0; j < JOINT_COUNT; j++) {
+    names.add(armJointName(j));
+    JsonArray l = limits.add<JsonArray>();
+    l.add(armJointMin(j));
+    l.add(armJointMax(j));
+  }
+  doc["gripper_open_deg"] = roundf(gripperOpenAngle());
+  doc["gripper_closed_deg"] = roundf(gripperClosedAngle());
+  sendJson(200, doc);
+}
+
+// ------------------------------------------------------------------ calibration
+
+static void handleCalibratePage() {
+  logRequest();
+  server.send_P(200, "text/html", CALIBRATE_PAGE);
+}
+
+static void handleCalibrateJog() {
+  logRequest();
+  JsonDocument body;
+  if (deserializeJson(body, server.arg("plain")) || !body["joint"].is<int>() || !body["angle"].is<float>()) {
+    sendError(400, "body must be JSON like {\"joint\": 0, \"angle\": 90}");
+    return;
+  }
+  replyMotion(armJog(body["joint"].as<int>(), body["angle"].as<float>()), "pose", armPoseName());
+}
+
+static void handleCalibrateSave() {
+  logRequest();
+  JsonDocument body;
+  if (deserializeJson(body, server.arg("plain"))) {
+    sendError(400, "body must be JSON");
+    return;
+  }
+  ArmError err;
+  if (body["pose"].is<const char *>()) {
+    err = armSavePose(body["pose"]);
+  } else if (body["gripper"] == "OPEN" || body["gripper"] == "CLOSED") {
+    err = gripperSave(body["gripper"] == "OPEN");
+  } else {
+    sendError(400, "body must be {\"pose\": \"MEDICINE\"} or {\"gripper\": \"OPEN\"|\"CLOSED\"}");
+    return;
+  }
+  if (err != ArmError::None) {
+    sendError(err == ArmError::Busy ? 409 : 400, armErrorText(err));
+    return;
+  }
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["config_valid"] = armConfigValid();
+  sendJson(200, doc);
+}
+
+static void handleCalibrateReset() {
+  logRequest();
+  armResetCalibration();
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["config_valid"] = armConfigValid();
   sendJson(200, doc);
 }
 
@@ -203,6 +274,10 @@ static const Route ROUTES[] = {
   {HTTP_POST, "/stop",          handleStop},
   {HTTP_POST, "/resume",        handleResume},
   {HTTP_GET,  "/debug/sensors", handleDebugSensors},
+  {HTTP_GET,  "/calibrate",     handleCalibratePage},
+  {HTTP_POST, "/calibrate/jog", handleCalibrateJog},
+  {HTTP_POST, "/calibrate/save", handleCalibrateSave},
+  {HTTP_POST, "/calibrate/reset", handleCalibrateReset},
 };
 
 static void handleRoot() {

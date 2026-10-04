@@ -13,7 +13,7 @@ firmware never classifies medical conditions.
 |---|---|---|
 | 1 | Wi-Fi (connect, auto-reconnect, optional static IP, mDNS) | done, running |
 | 2 | `GET /health`, `GET /`, JSON errors | done, running |
-| 3–6 | Arm (3 joints) + gripper, smooth motion, named poses, joint limits | done, compiles; needs angle calibration |
+| 3–6 | Arm (3 joints) + gripper, smooth motion, named poses, joint limits, browser calibration (`/calibrate`) | done, running |
 | 7 | STOP / RESUME (API + optional button), motion refused while stopped | done, compiles |
 | 8 | MPU6050 movement (`/imu`), direct register access so clone chips work too | done, compiles |
 | 9 | Pulse sensor with beat detection (`/heartbeat`) | done, compiles |
@@ -55,10 +55,15 @@ Heartbeat) into your `config.h`. The sketch won't compile until they're there, a
 
 Power the servos from a separate 5–6 V supply with its GND joined to the ESP32's GND.
 
-**Calibrate before mounting:** with the servo test sketch, find each joint's safe min/max and the
-angles for every pose (HOME, SAFE, USER, MEDICINE, WATER, PHONE, SPOON). Put them in `JOINT_MIN_DEG`,
-`JOINT_MAX_DEG` and `POSE_TABLE`. At boot the firmware checks every pose against the limits; if
-one is outside, the Serial Monitor names it and all motion is refused.
+**Calibrate the poses** (no re-upload needed): open `http://<ESP32 IP>/calibrate` in a browser.
+Move each joint with its slider, and when the arm is where it should be, tap **Save as MEDICINE**
+(and so on for HOME, SAFE, USER, WATER, PHONE, SPOON). Do the same for the gripper's OPEN and
+CLOSED angles. Saved angles live in the ESP32's flash, survive restarts and override
+`POSE_TABLE`. The page also shows the matching `POSE_TABLE` text to paste into `config.h`.
+
+Set each joint's safe range first in `JOINT_MIN_DEG` / `JOINT_MAX_DEG`: sliders can't go past it,
+and at boot every pose is checked against it (an out-of-range pose is named in the Serial
+Monitor and named-pose moves are refused until it's fixed on the calibration page).
 
 **How a move works:** `POST /arm/pose` answers at once with `"moving": true`, the arm moves
 smoothly (all joints arrive together, eased start and stop), and the Pi polls `/status` until

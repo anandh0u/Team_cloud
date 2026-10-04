@@ -1,6 +1,7 @@
 #include "arm.h"
 
 #include <ESP32Servo.h>
+#include <Preferences.h>
 
 #include "config.h"
 
@@ -9,12 +10,19 @@ struct Pose {
   float angles[JOINT_COUNT];
 };
 
-static const Pose POSES[] = POSE_TABLE;
+static const Pose POSES[] = POSE_TABLE;  // defaults; calibrated angles saved in flash override them
 static const int POSE_COUNT = sizeof(POSES) / sizeof(POSES[0]);
 static const int JOINT_PIN[JOINT_COUNT] = JOINT_PINS;
 static const char *const JOINT_NAME[JOINT_COUNT] = JOINT_NAMES;
 static const float JOINT_MIN[JOINT_COUNT] = JOINT_MIN_DEG;
 static const float JOINT_MAX[JOINT_COUNT] = JOINT_MAX_DEG;
+
+// Angles in use: POSE_TABLE, overridden per pose by calibration saved in flash (NVS).
+static float poseAngles[POSE_COUNT][JOINT_COUNT];
+static bool poseSaved[POSE_COUNT];
+static float gripOpenDeg = GRIPPER_OPEN_DEG, gripClosedDeg = GRIPPER_CLOSED_DEG;
+static Preferences prefs;
+static const char *PREFS_NAMESPACE = "arm-cal";
 
 static Servo joints[JOINT_COUNT];
 static Servo gripper;
@@ -38,7 +46,8 @@ const char *armErrorText(ArmError e) {
     case ArmError::UnknownPose: return "unknown pose";
     case ArmError::EmergencyStop: return "emergency stop active: motion refused until /resume";
     case ArmError::Busy: return "arm is still moving";
-    case ArmError::ConfigInvalid: return "pose table in config.h is invalid (see Serial Monitor): motion refused";
+    case ArmError::ConfigInvalid: return "pose table is invalid (see Serial Monitor): motion refused";
+    case ArmError::OutOfRange: return "angle outside the joint limits in config.h";
     default: return "";
   }
 }
@@ -47,21 +56,28 @@ static int toMicros(float deg) {
   return SERVO_MIN_US + (int)((SERVO_MAX_US - SERVO_MIN_US) * constrain(deg, 0.0f, 180.0f) / 180.0f);
 }
 
-static const Pose *findPose(const char *name) {
-  for (const Pose &p : POSES) {
-    if (strcmp(p.name, name) == 0) return &p;
+static int findPose(const char *name) {
+  for (int i = 0; i < POSE_COUNT; i++) {
+    if (strcmp(POSES[i].name, name) == 0) return i;
   }
-  return nullptr;
+  return -1;
+}
+
+static bool inLimits(const float *angles) {
+  for (int j = 0; j < JOINT_COUNT; j++) {
+    if (angles[j] < JOINT_MIN[j] || angles[j] > JOINT_MAX[j]) return false;
+  }
+  return true;
 }
 
 static bool validatePoses() {
-  bool ok = findPose(HOME_POSE) != nullptr;
+  bool ok = findPose(HOME_POSE) >= 0;
   if (!ok) Serial.printf("[ERROR] HOME_POSE \"%s\" is not in POSE_TABLE\n", HOME_POSE);
-  for (const Pose &p : POSES) {
+  for (int i = 0; i < POSE_COUNT; i++) {
     for (int j = 0; j < JOINT_COUNT; j++) {
-      if (p.angles[j] < JOINT_MIN[j] || p.angles[j] > JOINT_MAX[j]) {
-        Serial.printf("[ERROR] pose %s: %s angle %.0f is outside %.0f-%.0f\n", p.name, JOINT_NAME[j],
-                      p.angles[j], JOINT_MIN[j], JOINT_MAX[j]);
+      if (poseAngles[i][j] < JOINT_MIN[j] || poseAngles[i][j] > JOINT_MAX[j]) {
+        Serial.printf("[ERROR] pose %s: %s angle %.0f is outside %.0f-%.0f\n", POSES[i].name, JOINT_NAME[j],
+                      poseAngles[i][j], JOINT_MIN[j], JOINT_MAX[j]);
         ok = false;
       }
     }
@@ -69,72 +85,155 @@ static bool validatePoses() {
   return ok;
 }
 
+// Loads POSE_TABLE, then any calibrated angles saved in flash. A saved pose that no longer
+// fits the joint limits (config.h changed since) is ignored, never used.
+static void loadPoses() {
+  for (int i = 0; i < POSE_COUNT; i++) {
+    memcpy(poseAngles[i], POSES[i].angles, sizeof(poseAngles[i]));
+    poseSaved[i] = false;
+    float saved[JOINT_COUNT];
+    if (prefs.getBytes(POSES[i].name, saved, sizeof(saved)) == sizeof(saved)) {
+      if (inLimits(saved)) {
+        memcpy(poseAngles[i], saved, sizeof(saved));
+        poseSaved[i] = true;
+      } else {
+        Serial.printf("[ARM] ignoring saved %s: outside the current joint limits\n", POSES[i].name);
+      }
+    }
+  }
+  gripOpenDeg = prefs.getFloat("grip_open", GRIPPER_OPEN_DEG);
+  gripClosedDeg = prefs.getFloat("grip_closed", GRIPPER_CLOSED_DEG);
+}
+
 bool armBegin() {
+  prefs.begin(PREFS_NAMESPACE, false);
+  loadPoses();
   configValid = validatePoses();
-  const Pose *home = findPose(HOME_POSE);
+  int home = findPose(HOME_POSE);
   for (int j = 0; j < JOINT_COUNT; j++) {
-    current[j] = from[j] = to[j] = home ? home->angles[j] : (JOINT_MIN[j] + JOINT_MAX[j]) / 2;
+    current[j] = from[j] = to[j] = home >= 0 ? poseAngles[home][j] : (JOINT_MIN[j] + JOINT_MAX[j]) / 2;
     joints[j].setPeriodHertz(50);
     joints[j].attach(JOINT_PIN[j], SERVO_MIN_US, SERVO_MAX_US);
     joints[j].writeMicroseconds(toMicros(current[j]));
     delay(250);  // stagger the start-up current spikes
   }
+  gripCurrent = gripFrom = gripTo = gripOpenDeg;
   gripper.setPeriodHertz(50);
   gripper.attach(GRIPPER_PIN, SERVO_MIN_US, SERVO_MAX_US);
   gripper.writeMicroseconds(toMicros(gripCurrent));
-  poseName = home ? home->name : "UNKNOWN";
+  poseName = home >= 0 ? POSES[home].name : "UNKNOWN";
 #if STOP_BUTTON_PIN >= 0
   pinMode(STOP_BUTTON_PIN, INPUT_PULLUP);
 #endif
-  Serial.printf("[ARM] %d joints + gripper ready at %s, %d poses%s\n", JOINT_COUNT, poseName, POSE_COUNT,
-                configValid ? "" : " (POSE TABLE INVALID: motion refused)");
+  int saved = 0;
+  for (int i = 0; i < POSE_COUNT; i++) saved += poseSaved[i];
+  Serial.printf("[ARM] %d joints + gripper ready at %s, %d poses (%d calibrated)%s\n", JOINT_COUNT, poseName,
+                POSE_COUNT, saved, configValid ? "" : " (POSE TABLE INVALID: only calibration moves allowed)");
   return configValid;
 }
 
-static ArmError checkCanMove() {
+// Calibration moves are allowed with an invalid pose table (that's how you fix it);
+// named-pose moves are not.
+static ArmError checkCanMove(bool needValidConfig) {
   if (emergencyStop) return ArmError::EmergencyStop;
-  if (!configValid) return ArmError::ConfigInvalid;
+  if (needValidConfig && !configValid) return ArmError::ConfigInvalid;
   if (jointsMoving || gripMoving) return ArmError::Busy;
   return ArmError::None;
 }
 
-ArmError armMoveToPose(const char *name) {
-  const Pose *pose = findPose(name);
-  if (pose == nullptr) return ArmError::UnknownPose;
-  ArmError err = checkCanMove();
-  if (err != ArmError::None) return err;
-
+static void startJointMove(const float *target) {
   float longest = 0;
   for (int j = 0; j < JOINT_COUNT; j++) {
     from[j] = current[j];
-    to[j] = constrain(pose->angles[j], JOINT_MIN[j], JOINT_MAX[j]);
+    to[j] = constrain(target[j], JOINT_MIN[j], JOINT_MAX[j]);
     longest = max(longest, fabsf(to[j] - from[j]));
   }
   moveStartMs = millis();
   moveDurationMs = (unsigned long)(1000.0f * longest / ARM_SPEED_DEG_S);
   jointsMoving = true;
-  poseName = pose->name;
-  Serial.printf("[ARM] moving to %s (%lu ms)\n", pose->name, moveDurationMs);
+}
+
+ArmError armMoveToPose(const char *name) {
+  int i = findPose(name);
+  if (i < 0) return ArmError::UnknownPose;
+  ArmError err = checkCanMove(true);
+  if (err != ArmError::None) return err;
+  startJointMove(poseAngles[i]);
+  poseName = POSES[i].name;
+  Serial.printf("[ARM] moving to %s (%lu ms)\n", poseName, moveDurationMs);
   return ArmError::None;
 }
 
 ArmError armHome() { return armMoveToPose(HOME_POSE); }
 
-static ArmError moveGripper(float target, const char *name) {
-  ArmError err = checkCanMove();
+static ArmError moveGripper(float target, const char *name, bool needValidConfig) {
+  ArmError err = checkCanMove(needValidConfig);
   if (err != ArmError::None) return err;
   gripFrom = gripCurrent;
-  gripTo = target;
+  gripTo = constrain(target, 0.0f, 180.0f);
   gripStartMs = millis();
   gripDurationMs = (unsigned long)(1000.0f * fabsf(gripTo - gripFrom) / GRIPPER_SPEED_DEG_S);
   gripMoving = true;
   gripName = name;
-  Serial.printf("[ARM] gripper %s\n", name);
+  Serial.printf("[ARM] gripper %s (%.0f deg)\n", name, gripTo);
   return ArmError::None;
 }
 
-ArmError gripperOpen() { return moveGripper(GRIPPER_OPEN_DEG, "OPEN"); }
-ArmError gripperClose() { return moveGripper(GRIPPER_CLOSED_DEG, "CLOSED"); }
+ArmError gripperOpen() { return moveGripper(gripOpenDeg, "OPEN", true); }
+ArmError gripperClose() { return moveGripper(gripClosedDeg, "CLOSED", true); }
+
+// ------------------------------------------------------------------ calibration
+
+ArmError armJog(int joint, float angle) {
+  if (joint == JOINT_COUNT) return moveGripper(angle, "UNKNOWN", false);
+  if (joint < 0 || joint > JOINT_COUNT) return ArmError::OutOfRange;
+  if (angle < JOINT_MIN[joint] || angle > JOINT_MAX[joint]) return ArmError::OutOfRange;
+  ArmError err = checkCanMove(false);
+  if (err != ArmError::None) return err;
+  float target[JOINT_COUNT];
+  memcpy(target, current, sizeof(target));
+  target[joint] = angle;
+  startJointMove(target);
+  poseName = "UNKNOWN";  // between named poses until one is reached or saved
+  return ArmError::None;
+}
+
+ArmError armSavePose(const char *name) {
+  int i = findPose(name);
+  if (i < 0) return ArmError::UnknownPose;
+  if (jointsMoving) return ArmError::Busy;
+  float angles[JOINT_COUNT];
+  for (int j = 0; j < JOINT_COUNT; j++) angles[j] = roundf(current[j]);
+  if (!inLimits(angles)) return ArmError::OutOfRange;
+  prefs.putBytes(POSES[i].name, angles, sizeof(angles));
+  memcpy(poseAngles[i], angles, sizeof(angles));
+  poseSaved[i] = true;
+  poseName = POSES[i].name;  // the arm is now exactly at this pose
+  configValid = validatePoses();
+  Serial.printf("[CAL] saved %s =", POSES[i].name);
+  for (int j = 0; j < JOINT_COUNT; j++) Serial.printf(" %.0f", angles[j]);
+  Serial.println();
+  return ArmError::None;
+}
+
+ArmError gripperSave(bool open) {
+  if (gripMoving) return ArmError::Busy;
+  float angle = roundf(gripCurrent);
+  prefs.putFloat(open ? "grip_open" : "grip_closed", angle);
+  (open ? gripOpenDeg : gripClosedDeg) = angle;
+  gripName = open ? "OPEN" : "CLOSED";
+  Serial.printf("[CAL] saved gripper %s = %.0f\n", gripName, angle);
+  return ArmError::None;
+}
+
+void armResetCalibration() {
+  prefs.clear();
+  loadPoses();
+  configValid = validatePoses();
+  Serial.println("[CAL] calibration cleared: using POSE_TABLE from config.h");
+}
+
+// ------------------------------------------------------------------ stop
 
 void armStop(const char *reason) {
   if (jointsMoving) poseName = "UNKNOWN";  // frozen somewhere between poses
@@ -200,3 +299,10 @@ float armJointAngle(int joint) { return current[joint]; }
 float gripperAngle() { return gripCurrent; }
 int armPoseCount() { return POSE_COUNT; }
 const char *armPoseNameAt(int index) { return POSES[index].name; }
+float armPoseAngle(int pose, int joint) { return poseAngles[pose][joint]; }
+bool armPoseCalibrated(int pose) { return poseSaved[pose]; }
+const char *armJointName(int joint) { return JOINT_NAME[joint]; }
+float armJointMin(int joint) { return JOINT_MIN[joint]; }
+float armJointMax(int joint) { return JOINT_MAX[joint]; }
+float gripperOpenAngle() { return gripOpenDeg; }
+float gripperClosedAngle() { return gripClosedDeg; }
