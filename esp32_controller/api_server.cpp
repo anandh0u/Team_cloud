@@ -122,6 +122,13 @@ static void handleImu() {
   sendJson(200, doc);
 }
 
+static void handleDebugSensors() {
+  logRequest();
+  JsonDocument doc;
+  sensorsDebugToJson(doc.to<JsonObject>());
+  sendJson(200, doc);
+}
+
 static void handleArmPose() {
   logRequest();
   JsonDocument body;
@@ -195,6 +202,7 @@ static const Route ROUTES[] = {
   {HTTP_POST, "/gripper/close", handleGripperClose},
   {HTTP_POST, "/stop",          handleStop},
   {HTTP_POST, "/resume",        handleResume},
+  {HTTP_GET,  "/debug/sensors", handleDebugSensors},
 };
 
 static void handleRoot() {

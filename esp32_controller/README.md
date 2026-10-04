@@ -15,7 +15,7 @@ firmware never classifies medical conditions.
 | 2 | `GET /health`, `GET /`, JSON errors | done, running |
 | 3–6 | Arm (3 joints) + gripper, smooth motion, named poses, joint limits | done, compiles; needs angle calibration |
 | 7 | STOP / RESUME (API + optional button), motion refused while stopped | done, compiles |
-| 8 | MPU6050 movement (`/imu`) | done, compiles |
+| 8 | MPU6050 movement (`/imu`), direct register access so clone chips work too | done, compiles |
 | 9 | Pulse sensor with beat detection (`/heartbeat`) | done, compiles |
 | 10–11 | `/status`, `/telemetry`, faults reported as `{"available": false}` | done, compiles |
 
@@ -28,7 +28,7 @@ firmware never classifies medical conditions.
 3. **Libraries.** In **Tools → Manage Libraries**, install:
    - **ArduinoJson** by Benoit Blanchon, **version 7.x** (needed now)
    - **ESP32Servo** by Kevin Harrington (from step 3)
-   - **Adafruit MPU6050** (from step 8; already installed on this PC)
+   - (MPU6050: no library needed; the firmware reads it directly, which also works with clone chips)
    - **Adafruit ADS1X15** (only if the heartbeat goes through an ADS1115; already installed)
 
    `WiFi.h`, `WebServer.h`, `ESPmDNS.h` and `Wire.h` come with the board package.
@@ -65,6 +65,10 @@ smoothly (all joints arrive together, eased start and stop), and the Pi polls `/
 `moving` is false. The web server never waits for a move, so `/stop` is handled immediately,
 even mid-move. After a stop every motion command answers 409 until `/resume`; resuming never
 moves the arm by itself.
+
+**Wiring problems?** Open `http://<ESP32 IP>/debug/sensors` in a browser. It shows the pulse
+sensor's raw signal with a hint, and scans the I2C bus to list every device found on the
+MPU6050 pins.
 
 **Test from the Pi** (after updating `ESP32_CONTROLLER_URL`):
 

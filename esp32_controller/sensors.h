@@ -15,3 +15,7 @@ void sensorsUpdate();
 // A sensor that isn't working reports {"available": false} and no values.
 void heartbeatToJson(JsonObject out);
 void imuToJson(JsonObject out);
+
+// Wiring help for GET /debug/sensors: pulse signal level and an I2C bus scan.
+// Diagnostics only; the Pi never reads this.
+void sensorsDebugToJson(JsonObject out);

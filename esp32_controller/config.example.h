@@ -6,7 +6,7 @@
 #pragma once
 
 // ---------------------------------------------------------------- Device
-#define FIRMWARE_VERSION "0.2.0"
+#define FIRMWARE_VERSION "0.2.1"
 // Used as the Wi-Fi hostname and mDNS name (http://<DEVICE_NAME>.local)
 #define DEVICE_NAME "esp32-controller"
 #define SERIAL_BAUD 115200
