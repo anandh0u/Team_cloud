@@ -133,6 +133,8 @@ class Settings(BaseModel):
     openai_api_key: str | None = Field(default=None, repr=False)
     llm_model: str | None = None
     llm_timeout_s: float | None = None
+    llm_assistant: bool = False  # AI understands unmatched sentences and phrases replies
+    llm_assistant_timeout_s: float | None = None
 
     access_password: str | None = Field(default=None, repr=False)  # None = no login (local testing only)
 
@@ -254,7 +256,11 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if provider == "openai" and _optional(env, "OPENAI_API_KEY"):
         llm = dict(llm_provider=provider, openai_api_key=_require(env, "OPENAI_API_KEY"),
                    llm_model=_require(env, "LLM_MODEL"),
-                   llm_timeout_s=_number("LLM_TIMEOUT_S", _require(env, "LLM_TIMEOUT_S"), float, 1))
+                   llm_timeout_s=_number("LLM_TIMEOUT_S", _require(env, "LLM_TIMEOUT_S"), float, 1),
+                   llm_assistant=_bool("LLM_ASSISTANT", _require(env, "LLM_ASSISTANT")))
+        if llm["llm_assistant"]:
+            llm["llm_assistant_timeout_s"] = _number("LLM_ASSISTANT_TIMEOUT_S",
+                                                     _require(env, "LLM_ASSISTANT_TIMEOUT_S"), float, 1)
     elif provider and provider != "openai":
         raise ConfigError(f"LLM_PROVIDER={provider} is not implemented yet; use openai or leave it empty")
 

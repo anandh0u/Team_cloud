@@ -151,7 +151,8 @@ def test_history_drops_old_readings(tmp_path):
 
 # ---------------------------------------------------------------- OpenAI
 
-LLM_ENV = dict(LLM_PROVIDER="openai", OPENAI_API_KEY="sk-test-abcdef", LLM_MODEL="gpt-5.4-mini", LLM_TIMEOUT_S="30")
+LLM_ENV = dict(LLM_PROVIDER="openai", OPENAI_API_KEY="sk-test-abcdef", LLM_MODEL="gpt-5.4-mini", LLM_TIMEOUT_S="30",
+               LLM_ASSISTANT="false")
 
 
 def test_summarizer_sends_only_numbers_with_safety_rules(env, history):

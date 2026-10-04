@@ -22,6 +22,7 @@ from app.hardware.esp32_client import ControllerClient, build_controller
 from app.hardware.poses import PoseCatalog
 from app.hardware.telemetry import TelemetryService
 from app.models import CommResult
+from app.llm.assistant_llm import AssistantLLM
 from app.llm.openai_summary import OpenAISummarizer
 from app.patient.condition import ConditionTracker
 from app.patient.history import ActivityHistory
@@ -88,8 +89,10 @@ def create_app(settings: Settings | None = None, controller: ControllerClient | 
         monitor.start()
         if isinstance(detector, YoloDetector):
             await asyncio.to_thread(detector.warm_up)
+        assistant_llm = (AssistantLLM(settings, list(intents.objects), list(intents.contacts),
+                                      intents.emergency_call_contacts) if settings.llm_assistant else None)
         app.state.assistant = AssistantRouter(IntentParser(intents), arm, telemetry, caregiver, emergency, responses,
-                                              locator=locator)
+                                              locator=locator, llm=assistant_llm)
         logger.info("startup: mock_hardware=%s language=%s controller=%s communication=%s vision=%s voice=%s",
                     settings.mock_hardware, settings.assistant_language, client.source.value, caregiver.backend,
                     "on" if detector else "off", "on" if speech else "off")
@@ -101,6 +104,8 @@ def create_app(settings: Settings | None = None, controller: ControllerClient | 
                 history.close()
             if summarizer is not None:
                 await summarizer.aclose()
+            if assistant_llm is not None:
+                await assistant_llm.aclose()
             await client.aclose()
             await caregiver.aclose()
             if speech is not None:

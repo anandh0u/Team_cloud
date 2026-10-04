@@ -37,7 +37,9 @@ class ObjectLocator(Protocol):
 class AssistantRouter:
     def __init__(self, parser: IntentParser, arm: ArmService, telemetry: TelemetryService,
                  caregiver: CaregiverService, emergency: EmergencyHandler, responses: Responses,
-                 locator: ObjectLocator | None = None):
+                 locator: ObjectLocator | None = None, llm=None):
+        """`llm` (app.llm.assistant_llm.AssistantLLM) is optional: without it only the fixed
+        rules and replies are used."""
         responses.require(RESPONSE_KEYS)
         self.parser = parser
         self._arm = arm
@@ -46,9 +48,20 @@ class AssistantRouter:
         self._emergency = emergency
         self._r = responses
         self.locator = locator
+        self._llm = llm
 
     async def handle_text(self, text: str) -> AssistantResponse:
-        return await self.execute(self.parser.parse(text))
+        intent = self.parser.parse(text)
+        if intent.action == Action.UNKNOWN and self._llm is not None:
+            intent = await self._llm.understand(text) or intent
+        result = await self.execute(intent)
+        # Emergency and STOP replies stay fixed: fast, tested, and never reworded.
+        if self._llm is not None and intent.action not in (Action.EMERGENCY, Action.STOP):
+            phrased = await self._llm.reply(text, result)
+            if phrased:
+                result.details["standard_response"] = result.response
+                result.response = phrased
+        return result
 
     async def execute(self, intent: Intent) -> AssistantResponse:
         handler = {
