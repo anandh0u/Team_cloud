@@ -47,6 +47,8 @@ def create_app(settings: Settings | None = None, controller: ControllerClient | 
     poses = PoseCatalog.load(settings.pose_catalog_path)
     responses = Responses.load(settings.responses_path, settings.assistant_language)
     intents = IntentCatalog.load(settings.intents_path)
+    if settings.caregiver_name:  # "call Ayisha" = "call my caregiver"
+        intents.contacts["caregiver"] = [*intents.contacts["caregiver"], settings.caregiver_name.lower()]
     if caregiver is None:
         responses.require(("sms_message", "sms_call_request"))
         sms_texts = {"message": responses.get("sms_message", message="{message}"),

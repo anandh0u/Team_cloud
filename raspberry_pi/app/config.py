@@ -106,6 +106,7 @@ class Settings(BaseModel):
     esp32_move_timeout_s: float = 20.0
 
     communication_backend: str
+    caregiver_name: str | None = None  # also understood as the "caregiver" contact ("call Ayisha")
     # Contact name (as in the intent catalog) -> phone number in +<country><number> form.
     contact_phones: dict[str, str] = {}
     android_gateway_url: str | None = None
@@ -316,6 +317,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
            if not mock else {}),
         communication_backend=communication_backend,
         contact_phones=contact_phones,
+        caregiver_name=_optional(env, "CAREGIVER_NAME"),
         **gateway,
         **calls,
         yolo_model=_path(yolo_model) if yolo_model else None,

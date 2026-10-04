@@ -23,7 +23,15 @@ class PhoneAutomationDialer:
 
     async def call(self, number: str) -> None:
         # Never retried: a repeated request would ring the person twice.
-        response = await self._http.get(self._url, params={"number": number})
+        try:
+            response = await self._http.get(self._url, params={"number": number})
+        except httpx.ReadTimeout:
+            # The request reached the phone; MacroDroid just didn't answer (its trigger's
+            # "Send Response" is off). The macro runs anyway, so count the call as placed:
+            # reporting failure would make the page dial a second time.
+            logger.warning("phone automation didn't reply (enable 'Send Response' in MacroDroid); "
+                           "assuming the call to ...%s was placed", number[-3:])
+            return
         if response.status_code >= 300:
             raise ConnectionError(f"phone automation HTTP {response.status_code}: {response.text[:200]}")
         logger.info("bedside phone is calling ...%s", number[-3:])

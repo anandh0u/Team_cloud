@@ -138,3 +138,29 @@ def test_page_does_not_dial_again_when_the_phone_already_called(make_http, text)
 def test_page_falls_back_to_dialler_when_automatic_call_fails(make_http, text, number):
     body = make_http(FakeDialer(fail=True)).post("/assistant/phone", data={"text": text}).json()
     assert body["dial"] == number
+
+
+def test_reply_timeout_counts_as_call_placed(env):
+    env.update(CALL_ENV)
+
+    def handler(request):
+        raise httpx.ReadTimeout("no response", request=request)
+
+    run(PhoneAutomationDialer(load_settings(env), transport=httpx.MockTransport(handler)).call("+919876543210"))
+
+
+def test_connect_failure_is_still_a_failure(env):
+    env.update(CALL_ENV)
+
+    def handler(request):
+        raise httpx.ConnectError("phone offline", request=request)
+
+    with pytest.raises(httpx.ConnectError):
+        run(PhoneAutomationDialer(load_settings(env), transport=httpx.MockTransport(handler)).call("+919876543210"))
+
+
+def test_caregiver_name_is_understood(env, mock_client):
+    env.update(CAREGIVER_NAME="Ayisha", CAREGIVER_PHONE=PHONES["caregiver"])
+    with TestClient(create_app(load_settings(env), controller=mock_client, voice=FakeVoice())) as http:
+        body = http.post("/assistant/phone", data={"text": "call Ayisha"}).json()
+    assert body["assistant"]["action"] == "EMERGENCY" and body["assistant"]["contact"] == "caregiver"
