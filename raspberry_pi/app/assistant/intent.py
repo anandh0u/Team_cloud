@@ -1,10 +1,10 @@
 """Deterministic intent parser driven by config/intents/<lang>.json.
 
 Order of checks (first match wins):
-  EMERGENCY > STOP > HOME > STATUS > MESSAGE_CONTACT > CALL_CONTACT > FIND_OBJECT > GET_OBJECT > UNKNOWN
+  EMERGENCY > STOP > HOME > RELEASE > STATUS > MESSAGE_CONTACT > CALL_CONTACT > FIND_OBJECT > GET_OBJECT > UNKNOWN
 
-EMERGENCY and STOP are decided here, locally, before anything else; an LLM
-(phase 10) will only ever see utterances that end up UNKNOWN.
+EMERGENCY and STOP are decided here, locally, before anything else; the optional AI
+(app/llm/assistant_llm.py) only ever sees utterances that end up UNKNOWN.
 """
 from __future__ import annotations
 

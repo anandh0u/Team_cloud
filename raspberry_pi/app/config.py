@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Backend names the code knows how to build (see app/communication/caregiver.py).
-COMMUNICATION_BACKENDS = ("MOCK", "WEBHOOK", "ANDROID_GATEWAY")
+COMMUNICATION_BACKENDS = ("MOCK", "ANDROID_GATEWAY")
 # Sarvam speech-to-text modes. "translate" turns any supported Indian language into
 # English text, which is what the English intent parser understands.
 SARVAM_STT_MODES = ("transcribe", "translate")
@@ -263,7 +263,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             llm["llm_assistant_timeout_s"] = _number("LLM_ASSISTANT_TIMEOUT_S",
                                                      _require(env, "LLM_ASSISTANT_TIMEOUT_S"), float, 1)
     elif provider and provider != "openai":
-        raise ConfigError(f"LLM_PROVIDER={provider} is not implemented yet; use openai or leave it empty")
+        raise ConfigError(f"LLM_PROVIDER={provider} is not supported; use openai or leave it empty")
 
     # Voice is optional: without SARVAM_API_KEY only typed text works and replies aren't spoken.
     sarvam: dict[str, object] = {}

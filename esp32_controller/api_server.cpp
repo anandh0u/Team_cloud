@@ -55,13 +55,6 @@ static void handleHealth() {
   sendJson(200, doc);
 }
 
-// Endpoints from later build steps answer {"ok": false} so the Pi treats them
-// as refused instead of guessing.
-static void handleNotImplemented() {
-  logRequest();
-  sendError(501, "not implemented yet");
-}
-
 static void addArmState(JsonDocument &doc) {
   JsonObject arm = doc["arm"].to<JsonObject>();
   arm["pose"] = armPoseName();
@@ -291,7 +284,6 @@ static void handleRoot() {
     JsonObject e = endpoints.add<JsonObject>();
     e["method"] = methodName(r.method);
     e["path"] = r.path;
-    e["implemented"] = r.handler != handleNotImplemented;
   }
   sendJson(200, doc);
 }

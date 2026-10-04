@@ -120,6 +120,6 @@ def build_caregiver(settings: Settings, emergency_contact: str, sms_texts: dict[
                        "" if dialer else ", calls and alerts")
         channel = MockChannel()
     else:
-        raise ConfigError(f"COMMUNICATION_BACKEND={settings.communication_backend} is not implemented yet; "
+        raise ConfigError(f"COMMUNICATION_BACKEND={settings.communication_backend} is not supported; "
                           "use MOCK or ANDROID_GATEWAY")
     return CaregiverService(channel, emergency_contact, dialer, settings.contact_phones)

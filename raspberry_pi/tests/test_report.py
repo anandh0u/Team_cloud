@@ -195,7 +195,7 @@ def test_llm_settings(env):
     with pytest.raises(ConfigError, match="LLM_MODEL"):
         load_settings(env)
     env.update(LLM_PROVIDER="anthropic")
-    with pytest.raises(ConfigError, match="not implemented"):
+    with pytest.raises(ConfigError, match="not supported"):
         load_settings(env)
     env.update(LLM_ENV)
     assert "sk-test-abcdef" not in repr(load_settings(env))
