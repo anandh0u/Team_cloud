@@ -61,7 +61,17 @@
     "water": ["water", "drink", "water bottle", "bottle"],
     "spoon": ["spoon"],
     "cup": ["cup", "mug", "glass"],
-    "remote": ["remote", "tv remote", "remote control"]
+    "remote": ["remote", "tv remote", "remote control"],
+    "laptop": ["laptop", "computer", "notebook computer"],
+    "book": ["book", "books", "novel"],
+    "tv": ["tv", "television", "telly"],
+    "keyboard": ["keyboard"],
+    "mouse": ["mouse", "computer mouse"],
+    "clock": ["clock", "watch", "alarm clock"],
+    "scissors": ["scissors"],
+    "bowl": ["bowl", "plate"],
+    "toothbrush": ["toothbrush", "tooth brush"],
+    "bag": ["bag", "handbag", "purse", "backpack"]
   },
 
   "contacts": {

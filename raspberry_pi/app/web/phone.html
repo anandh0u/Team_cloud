@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bedside assistant</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 14px; background: #111; color: #eee; }
+  h1 { font-size: 1.2rem; margin: 0 0 10px; }
+  button, label.button { display: block; width: 100%; box-sizing: border-box; border: 0; text-align: center;
+           padding: 20px; font-size: 1.3rem; font-weight: 600; border-radius: 14px; cursor: pointer; color: #fff; }
+  #start { background: #2563eb; }
+  #talk { background: #16a34a; margin: 10px 0; }
+  #talk.recording { background: #dc2626; }
+  #talk:disabled { background: #444; }
+  label.button { background: #374151; margin: 10px 0; font-size: 1.1rem; padding: 14px; }
+  input[type=file] { display: none; }
+  form { display: flex; gap: 8px; margin: 10px 0; }
+  form input { flex: 1; padding: 12px; font-size: 1.05rem; border-radius: 10px; border: 1px solid #444; background: #222; color: #eee; }
+  form button { width: auto; padding: 12px 18px; font-size: 1.05rem; background: #2563eb; }
+  #notice { background: #422006; color: #fde68a; padding: 10px 12px; border-radius: 10px; margin-bottom: 10px; display: none; }
+  #notice a { color: #fff; }
+  video, canvas { width: 100%; height: auto; border-radius: 10px; display: none; background: #000; }
+  #live { position: relative; }
+  #live canvas { position: absolute; inset: 0; height: 100%; background: transparent; }
+  #liveinfo { font-size: .85rem; color: #86efac; margin: 4px 0; min-height: 1.1em; }
+  #status { margin: 8px 0; min-height: 1.3em; color: #aaa; }
+  #status.error { color: #f87171; }
+  #heard { color: #93c5fd; margin: 6px 0; }
+  #reply { font-size: 1.35rem; font-weight: 600; margin: 8px 0; }
+  #reply.emergency { color: #fca5a5; }
+  #dial { display: none; background: #dc2626; color: #fff; text-decoration: none; text-align: center; margin: 10px 0;
+          padding: 20px; font-size: 1.3rem; font-weight: 600; border-radius: 14px; }
+</style>
+</head>
+<body>
+<h1>Bedside assistant</h1>
+<div id="notice"></div>
+<button id="start">Start camera and microphone</button>
+<div id="live"><video id="preview" autoplay playsinline muted></video><canvas id="overlay"></canvas></div>
+<div id="liveinfo"></div>
+<button id="talk" disabled>🎤 Tap to speak</button>
+<label class="button" id="photoButton">📷 Take photo<input id="photo" type="file" accept="image/*" capture="environment"></label>
+<form id="typed"><input id="text" placeholder="…or type: where is my phone?" autocomplete="off"><button>Send</button></form>
+<div id="status"></div>
+<div id="heard"></div>
+<div id="reply"></div>
+<a id="dial" href="#">📞 Call now</a>
+<canvas id="snapshot"></canvas>
+
+<script>
+const HTTPS_PORT = "__HTTPS_PORT__";   // filled in by the server; empty when HTTPS is off
+const MAX_SIDE = 1280;                 // photos are shrunk before upload; YOLO works at 640 px
+const MAX_RECORD_MS = 10000;           // recording stops by itself after 10 s
+const LIVE_SIDE = 640;                 // live frames: small, YOLO's own input size
+const LIVE_INTERVAL_MS = 500;          // about 2 live frames per second (the Pi sets the real pace)
+
+const $ = id => document.getElementById(id);
+const preview = $("preview"), snapshot = $("snapshot"), talk = $("talk");
+const ctx = snapshot.getContext("2d");
+let stream = null, recorder = null, chunks = [], stopTimer = null, lastPhoto = null;
+
+function setStatus(text, isError = false) { $("status").textContent = text; $("status").className = isError ? "error" : ""; }
+
+// Microphone and live camera only work on HTTPS (or localhost) pages.
+const live = window.isSecureContext && navigator.mediaDevices && window.MediaRecorder;
+if (!live) {
+  $("start").style.display = "none";
+  talk.style.display = "none";
+  const notice = $("notice");
+  notice.style.display = "block";
+  if (HTTPS_PORT) {
+    const url = `https://${location.hostname}:${HTTPS_PORT}/phone`;
+    notice.innerHTML = `Voice needs the secure page: <a href="${url}">${url}</a><br>` +
+      `The browser will warn about the certificate. Tap <b>Advanced → Proceed</b>.`;
+  } else {
+    notice.textContent = "Voice is off on this page (needs HTTPS). You can still type and take photos.";
+  }
+} else {
+  $("photoButton").style.display = "none";  // the live camera takes the photo instead
+}
+
+$("start").addEventListener("click", async () => {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: { facingMode: "environment" } });
+  } catch (err) {
+    setStatus(`Camera/microphone blocked: ${err.message}`, true);
+    return;
+  }
+  preview.srcObject = stream;
+  preview.style.display = "block";
+  $("start").style.display = "none";
+  talk.disabled = false;
+  setStatus("Ready. Tap the green button and speak.");
+  liveLoop();
+});
+
+// Live detection: send a small frame, draw the boxes over the video, repeat. Each frame
+// waits for the previous answer, so a slow Pi or network never builds up a queue.
+const liveCanvas = document.createElement("canvas");
+async function liveLoop() {
+  const overlay = $("overlay"), octx = overlay.getContext("2d");
+  overlay.style.display = "block";
+  while (stream) {
+    const started = performance.now();
+    if (!document.hidden && preview.videoWidth) {
+      try {
+        const scale = Math.min(1, LIVE_SIDE / Math.max(preview.videoWidth, preview.videoHeight));
+        liveCanvas.width = Math.round(preview.videoWidth * scale);
+        liveCanvas.height = Math.round(preview.videoHeight * scale);
+        liveCanvas.getContext("2d").drawImage(preview, 0, 0, liveCanvas.width, liveCanvas.height);
+        const blob = await new Promise(r => liveCanvas.toBlob(r, "image/jpeg", 0.7));
+        const form = new FormData();
+        form.append("image", blob, "live.jpg");
+        const res = await fetch("/vision/detect", { method: "POST", body: form });
+        if (res.ok) {
+          const scene = await res.json();
+          overlay.width = preview.videoWidth;
+          overlay.height = preview.videoHeight;
+          drawBoxesOn(octx, overlay.width / scene.image_width, scene.detections);
+          const total = Math.round(performance.now() - started);
+          $("liveinfo").textContent = `● live: ${scene.detections.map(d => d.label).join(", ") || "nothing recognised"} (${total} ms)`;
+        } else {
+          $("liveinfo").textContent = `live detection paused (HTTP ${res.status})`;
+        }
+      } catch (err) {
+        $("liveinfo").textContent = "live detection: connection problem, retrying…";
+      }
+    }
+    await new Promise(r => setTimeout(r, Math.max(100, LIVE_INTERVAL_MS - (performance.now() - started))));
+  }
+}
+
+// Draws an image (a video frame or a photo) shrunk to MAX_SIDE and returns it as a JPEG blob.
+async function toJpeg(source, width, height) {
+  const scale = Math.min(1, MAX_SIDE / Math.max(width, height));
+  snapshot.width = Math.round(width * scale);
+  snapshot.height = Math.round(height * scale);
+  ctx.drawImage(source, 0, 0, snapshot.width, snapshot.height);
+  return new Promise(r => snapshot.toBlob(r, "image/jpeg", 0.85));
+}
+
+function liveFrame() {
+  if (!stream || !preview.videoWidth) return null;
+  return toJpeg(preview, preview.videoWidth, preview.videoHeight);
+}
+
+talk.addEventListener("click", () => {
+  if (recorder && recorder.state === "recording") { recorder.stop(); return; }
+  const audioOnly = new MediaStream(stream.getAudioTracks());
+  const type = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
+  recorder = new MediaRecorder(audioOnly, type ? { mimeType: type } : {});
+  chunks = [];
+  recorder.ondataavailable = e => e.data.size && chunks.push(e.data);
+  recorder.onstop = async () => {
+    clearTimeout(stopTimer);
+    talk.classList.remove("recording");
+    talk.textContent = "🎤 Tap to speak";
+    const audio = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+    const form = new FormData();
+    form.append("audio", audio, "speech.webm");
+    const frame = await liveFrame();
+    if (frame) form.append("image", frame, "table.jpg");
+    await send(form);
+  };
+  recorder.start();
+  talk.classList.add("recording");
+  talk.textContent = "⏹ Listening… tap to send";
+  setStatus("");
+  stopTimer = setTimeout(() => recorder.state === "recording" && recorder.stop(), MAX_RECORD_MS);
+});
+
+$("photo").addEventListener("change", async () => {
+  const file = $("photo").files[0];
+  $("photo").value = "";
+  if (!file) return;
+  const img = new Image();
+  img.src = URL.createObjectURL(file);
+  await img.decode();
+  lastPhoto = await toJpeg(img, img.naturalWidth, img.naturalHeight);
+  snapshot.style.display = "block";
+  const form = new FormData();
+  form.append("image", lastPhoto, "table.jpg");
+  setStatus("Looking…");
+  try {
+    const res = await fetch("/vision/detect", { method: "POST", body: form });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || `Server error ${res.status}`);
+    drawBoxes(body);
+    setStatus(`Photo saved. I can see: ${body.detections.map(d => d.label).join(", ") || "nothing I recognise"}. Now ask a question.`);
+  } catch (err) { setStatus(err.message, true); }
+});
+
+$("typed").addEventListener("submit", async e => {
+  e.preventDefault();
+  const text = $("text").value.trim();
+  if (!text) return;
+  const form = new FormData();
+  form.append("text", text);
+  const frame = await liveFrame();
+  if (frame) form.append("image", frame, "table.jpg");
+  $("text").value = "";
+  await send(form);
+});
+
+function drawBoxes(scene) {
+  snapshot.style.display = "block";
+  drawBoxesOn(ctx, snapshot.width / scene.image_width, scene.detections, false);
+}
+
+function drawBoxesOn(ctx, scale, detections, clear = true) {
+  if (clear) ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.lineWidth = Math.max(2, ctx.canvas.width / 300);
+  ctx.font = `${Math.max(14, ctx.canvas.width / 40)}px system-ui`;
+  for (const d of detections) {
+    const [x1, y1, x2, y2] = d.box.map(v => v * scale);
+    ctx.strokeStyle = "#22c55e";
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    const text = `${d.label} ${Math.round(d.confidence * 100)}%`, h = parseInt(ctx.font, 10) + 6;
+    ctx.fillStyle = "#22c55e";
+    ctx.fillRect(x1, Math.max(0, y1 - h), ctx.measureText(text).width + 8, h);
+    ctx.fillStyle = "#000";
+    ctx.fillText(text, x1 + 4, Math.max(h - 6, y1 - 6));
+  }
+}
+
+// SMS can't place a call, so the bedside phone opens its dialler with the number filled in.
+function showDial(number) {
+  const dial = $("dial");
+  dial.style.display = number ? "block" : "none";
+  if (!number) return;
+  dial.href = `tel:${number}`;
+  dial.textContent = `📞 Call ${number}`;
+  setTimeout(() => { location.href = dial.href; }, 2500);  // after the spoken reply has started
+}
+
+function speak(body) {
+  if (body.reply_audio) {
+    new Audio(`data:audio/wav;base64,${body.reply_audio}`).play().catch(() => {});
+  } else if (window.speechSynthesis) {
+    // No Sarvam audio (voice off or failed): fall back to the phone's own voice.
+    speechSynthesis.speak(new SpeechSynthesisUtterance(body.reply_text || body.assistant.response));
+  }
+}
+
+async function send(form) {
+  setStatus("Thinking…");
+  $("heard").textContent = "";
+  $("reply").textContent = "";
+  try {
+    const res = await fetch("/assistant/phone", { method: "POST", body: form });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || `Server error ${res.status}`);
+    if (body.transcript) $("heard").textContent = `You said: "${body.transcript}"`;
+    $("reply").textContent = body.reply_text || body.assistant.response;
+    if (body.reply_text && body.reply_text !== body.assistant.response) {
+      $("heard").textContent += `  ·  English: "${body.assistant.response}"`;
+    }
+    $("reply").className = body.assistant.action === "EMERGENCY" ? "emergency" : "";
+    if (body.vision) drawBoxes(body.vision);
+    const notes = [body.vision_error, body.voice_error].filter(Boolean);
+    setStatus(notes.join(" · "), notes.length > 0);
+    speak(body);
+    showDial(body.dial);
+  } catch (err) {
+    setStatus(err.message, true);
+  }
+}
+</script>
+</body>
+</html>

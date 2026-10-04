@@ -18,7 +18,9 @@ class FindObjectRequest(BaseModel):
 
 @router.post("/assistant/text", response_model=AssistantResponse)
 async def assistant_text(body: TextRequest, request: Request) -> AssistantResponse:
-    return await request.app.state.assistant.handle_text(body.text)
+    result = await request.app.state.assistant.handle_text(body.text)
+    request.app.state.monitor.log("command", result.ok, f'"{body.text}" -> {result.response}')
+    return result
 
 
 @router.post("/find-object", response_model=AssistantResponse)

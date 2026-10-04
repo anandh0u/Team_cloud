@@ -1,0 +1,53 @@
+{
+  "_comment": "Which YOLO (COCO) labels count as each assistant object. Objects listed with [] are known to the assistant but the current model can't recognise them (medicine needs a custom-trained model). Objects missing here are treated the same way.",
+  "object_labels": {
+    "phone": [
+      "cell phone"
+    ],
+    "water": [
+      "bottle"
+    ],
+    "cup": [
+      "cup",
+      "wine glass"
+    ],
+    "spoon": [
+      "spoon"
+    ],
+    "remote": [
+      "remote"
+    ],
+    "medicine": [],
+    "laptop": [
+      "laptop"
+    ],
+    "book": [
+      "book"
+    ],
+    "tv": [
+      "tv"
+    ],
+    "keyboard": [
+      "keyboard"
+    ],
+    "mouse": [
+      "mouse"
+    ],
+    "clock": [
+      "clock"
+    ],
+    "scissors": [
+      "scissors"
+    ],
+    "bowl": [
+      "bowl"
+    ],
+    "toothbrush": [
+      "toothbrush"
+    ],
+    "bag": [
+      "handbag",
+      "backpack"
+    ]
+  }
+}

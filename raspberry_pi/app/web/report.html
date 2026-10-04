@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Activity report</title>
+<style>
+  .viz-root {
+    color-scheme: dark;
+    --page: #0f172a;
+    --surface-1: #1e293b;
+    --grid: #334155;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --series-1: #3987e5;   /* single series: share of checks with movement */
+  }
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: var(--page); color: var(--text-primary); }
+  h1 { font-size: 1.3rem; margin: 0; }
+  h2 { font-size: 1rem; margin: 0 0 10px; color: var(--text-secondary); font-weight: 600; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  header a { color: var(--text-secondary); }
+  .range button { background: var(--surface-1); color: var(--text-secondary); border: 1px solid var(--grid); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: .9rem; }
+  .range button[aria-pressed="true"] { color: var(--text-primary); border-color: var(--series-1); }
+  .card { background: var(--surface-1); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+  #trend .value { font-size: 1.8rem; font-weight: 700; }
+  #trend .sub { color: var(--text-secondary); margin-top: 4px; }
+  #ai { line-height: 1.5; }
+  #ai .note { color: var(--text-secondary); font-size: .85rem; margin-top: 8px; }
+  ul.plain { margin: 0; padding-left: 18px; line-height: 1.6; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .grid .card { margin: 0; }
+  .label { font-size: .8rem; color: var(--text-secondary); }
+  .value { font-size: 1.35rem; font-weight: 700; margin-top: 4px; }
+  #chart { position: relative; }
+  #chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+  #chart text { fill: var(--text-secondary); font-size: 12px; }
+  #tip { position: absolute; pointer-events: none; background: #0b1220; border: 1px solid var(--grid); border-radius: 8px;
+         padding: 6px 9px; font-size: .85rem; white-space: nowrap; display: none; transform: translate(-50%, -100%); }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--text-secondary); font-weight: 600; }
+  details summary { cursor: pointer; color: var(--text-secondary); margin-top: 10px; }
+  footer { font-size: .8rem; color: var(--text-secondary); margin-top: 8px; }
+</style>
+</head>
+<body class="viz-root">
+<header>
+  <h1>Activity report</h1>
+  <div class="range" role="group" aria-label="Report period">
+    <button data-hours="24" aria-pressed="true">Last 24 h</button>
+    <button data-hours="72" aria-pressed="false">3 days</button>
+    <button data-hours="168" aria-pressed="false">7 days</button>
+    <a href="/dashboard">← Dashboard</a>
+  </div>
+</header>
+
+<div class="card" id="trend"><div class="label">Activity compared with the period before</div><div class="value" id="trendValue">Loading…</div><div class="sub" id="trendSub"></div></div>
+
+<div class="card" id="ai"><h2>Summary</h2><div id="aiText">Writing summary…</div>
+  <div class="note">Written by AI from the numbers below only (no photos are sent). It describes activity; it can't say whether the patient is better or worse.</div></div>
+
+<div class="grid">
+  <div class="card"><div class="label">Camera watched</div><div class="value" id="watched">–</div></div>
+  <div class="card"><div class="label">Moved in</div><div class="value" id="active">–</div></div>
+  <div class="card"><div class="label">Lying / reclined / upright</div><div class="value" id="posture">–</div></div>
+  <div class="card"><div class="label">Longest without movement</div><div class="value" id="still">–</div></div>
+  <div class="card"><div class="label">Out of camera view</div><div class="value" id="away">–</div></div>
+</div>
+
+<div class="card"><h2>Details</h2><ul class="plain" id="highlights"></ul></div>
+
+<div class="card">
+  <h2>Share of checks with movement, last 7 days</h2>
+  <div id="chart"><div id="tip"></div></div>
+  <details><summary>Show as table</summary>
+    <table><thead><tr><th>Day</th><th>Moved in</th><th>Camera watched</th></tr></thead><tbody id="table"></tbody></table>
+  </details>
+</div>
+
+<footer>Prototype, not a medical device. Position and movement are rough estimates from the bedside camera.
+More movement can mean more activity, but also restlessness or discomfort; please discuss changes with the doctor or nurse.</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+let hours = 24;
+
+function duration(min) {
+  if (min == null) return "–";
+  const m = Math.round(min);
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`;
+}
+const pct = v => v == null ? "–" : `${Math.round(v)}%`;
+const dayName = iso => new Date(iso + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric" });
+
+const TREND = {
+  more_active: "More active", less_active: "Less active",
+  about_the_same: "About the same", not_enough_data: "Not enough data yet",
+};
+
+function renderNumbers(r) {
+  const c = r.current, p = r.previous;
+  $("trendValue").textContent = TREND[r.trend];
+  $("trendSub").textContent = r.trend === "not_enough_data"
+    ? "Needs at least 30 minutes of camera time in both periods to compare."
+    : `Moved in ${pct(c.active_pct)} of checks, compared with ${pct(p.active_pct)} in the ${r.hours} hours before`
+      + (r.active_change_points != null ? ` (${r.active_change_points > 0 ? "+" : ""}${Math.round(r.active_change_points)} points).` : ".");
+  $("watched").textContent = duration(c.observed_min);
+  $("active").textContent = c.enough_data ? pct(c.active_pct) : "–";
+  $("posture").textContent = c.lying_pct == null ? "–" : `${pct(c.lying_pct)} / ${pct(c.reclined_pct)} / ${pct(c.upright_pct)}`;
+  $("still").textContent = c.enough_data ? duration(c.longest_still_min) : "–";
+  $("away").textContent = c.in_view_pct == null ? "–" : pct(100 - c.in_view_pct);
+  $("highlights").innerHTML = "";
+  for (const line of r.highlights) {
+    const li = document.createElement("li");
+    li.textContent = line;
+    $("highlights").appendChild(li);
+  }
+  renderChart(r.daily);
+}
+
+// Bar chart: one series, one hue, bars <= 24px with a 4px rounded top and a square base,
+// hairline gridlines, a hover tooltip per bar, and only the latest day labelled directly.
+function renderChart(daily) {
+  const W = 640, H = 220, L = 36, R = 8, T = 18, B = 26, plotH = H - T - B, band = (W - L - R) / daily.length;
+  const barW = Math.min(24, band * 0.6), y = v => T + plotH * (1 - v / 100);
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Share of camera checks with movement per day, last 7 days");
+  const el = (name, attrs, text) => {
+    const e = document.createElementNS(ns, name);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (text != null) e.textContent = text;
+    svg.appendChild(e);
+    return e;
+  };
+  for (const v of [0, 50, 100]) {
+    el("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: "var(--grid)", "stroke-width": 1 });
+    el("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" }, `${v}%`);
+  }
+  const tip = $("tip");
+  daily.forEach((d, i) => {
+    const cx = L + band * i + band / 2;
+    el("text", { x: cx, y: H - 6, "text-anchor": "middle" }, dayName(d.day));
+    if (d.active_pct == null) {
+      el("text", { x: cx, y: y(0) - 6, "text-anchor": "middle" }, "no data");
+    } else {
+      const top = y(d.active_pct), h = Math.max(y(0) - top, 0.5), r = Math.min(4, h, barW / 2), x = cx - barW / 2;
+      el("path", { fill: "var(--series-1)", d: `M${x},${y(0)} V${top + r} Q${x},${top} ${x + r},${top} H${x + barW - r} Q${x + barW},${top} ${x + barW},${top + r} V${y(0)} Z` });
+      if (i === daily.length - 1) el("text", { x: cx, y: top - 6, "text-anchor": "middle", fill: "var(--text-primary)" }, pct(d.active_pct));
+    }
+    // Hit target: the whole day column, larger than the bar.
+    const hit = el("rect", { x: L + band * i, y: T, width: band, height: plotH, fill: "transparent" });
+    const show = () => {
+      tip.innerHTML = `<b>${dayName(d.day)}</b><br>${d.active_pct == null ? "not enough camera time" : `moved in ${pct(d.active_pct)} of checks`}<br>camera watched ${duration(d.observed_min)}`;
+      const box = svg.getBoundingClientRect(), scale = box.width / W;
+      tip.style.left = `${cx * scale}px`;
+      tip.style.top = `${(d.active_pct == null ? y(0) : y(d.active_pct)) * scale - 8}px`;
+      tip.style.display = "block";
+    };
+    hit.addEventListener("mouseenter", show);
+    hit.addEventListener("click", show);
+    hit.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+  });
+  const chart = $("chart");
+  chart.querySelector("svg")?.remove();
+  chart.prepend(svg);
+
+  $("table").innerHTML = daily.map(d =>
+    `<tr><td>${dayName(d.day)}</td><td>${d.active_pct == null ? "not enough data" : pct(d.active_pct)}</td><td>${duration(d.observed_min)}</td></tr>`).join("");
+}
+
+async function load() {
+  $("aiText").textContent = "Writing summary…";
+  try {
+    const res = await fetch(`/report/data?hours=${hours}&ai=false`, { cache: "no-store" });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || `HTTP ${res.status}`);
+    renderNumbers(body);
+    if (!body.current.enough_data) {
+      $("aiText").textContent = "No summary yet: the camera needs to watch for at least 30 minutes first.";
+      return;
+    }
+    const ai = await (await fetch(`/report/data?hours=${hours}&ai=true`, { cache: "no-store" })).json();
+    $("aiText").textContent = ai.ai_summary || ai.ai_error || "AI summary is off (no OpenAI key configured).";
+  } catch (err) {
+    $("trendValue").textContent = "Report unavailable";
+    $("trendSub").textContent = err.message;
+    $("aiText").textContent = "";
+  }
+}
+
+for (const button of document.querySelectorAll(".range button")) {
+  button.addEventListener("click", () => {
+    hours = Number(button.dataset.hours);
+    document.querySelectorAll(".range button").forEach(b => b.setAttribute("aria-pressed", String(b === button)));
+    load();
+  });
+}
+load();
+</script>
+</body>
+</html>

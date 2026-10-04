@@ -8,8 +8,8 @@ Hackathon prototype. **Not a medical device**; it does not diagnose anything.
 
 | Folder | What | Status |
 |---|---|---|
-| [`raspberry_pi/`](raspberry_pi/) | Main brain (Raspberry Pi 5): FastAPI backend, ESP32 client, mock hardware. Voice, vision and patient analysis to follow | Phases 1–2 done, 35 tests passing |
-| [`esp32_controller/`](esp32_controller/) | ESP32 firmware (Arduino IDE): arm, gripper, heartbeat, MPU6050 over HTTP | Steps 1–2 (Wi-Fi + `/health`) written, not yet uploaded |
+| [`raspberry_pi/`](raspberry_pi/) | Main brain (Raspberry Pi 5): voice (Sarvam, Indian languages), YOLO vision + pose on the bedside phone camera, caregiver dashboard, activity reports with AI summary, SMS + automatic calls, ESP32 client | Working, 226 tests passing |
+| [`esp32_controller/`](esp32_controller/) | ESP32 firmware (Arduino IDE): arm, gripper, heartbeat, MPU6050 over HTTP | Steps 1–11 written and compiling; pose angles need calibration |
 | [`gripper_cad/`](gripper_cad/) | 3D-printable two-jaw gripper: Fusion script + ready STL/STEP files | Done |
 
 ## Gripper quick start

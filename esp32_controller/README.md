@@ -11,12 +11,13 @@ firmware never classifies medical conditions.
 
 | Step | What | State |
 |---|---|---|
-| 1 | Wi-Fi (connect, auto-reconnect, optional static IP, mDNS) | done, not yet compiled |
-| 2 | `GET /health`, `GET /`, JSON errors | done, not yet compiled |
-| 3–11 | Servo test, arm, poses, gripper, STOP/RESUME, MPU6050, heartbeat, telemetry, faults | not started |
-
-Endpoints from later steps already exist but answer `501 {"ok": false, "error": "not implemented yet"}`,
-so the Pi treats them as refused instead of guessing.
+| 1 | Wi-Fi (connect, auto-reconnect, optional static IP, mDNS) | done, running |
+| 2 | `GET /health`, `GET /`, JSON errors | done, running |
+| 3–6 | Arm (3 joints) + gripper, smooth motion, named poses, joint limits | done, compiles; needs angle calibration |
+| 7 | STOP / RESUME (API + optional button), motion refused while stopped | done, compiles |
+| 8 | MPU6050 movement (`/imu`) | done, compiles |
+| 9 | Pulse sensor with beat detection (`/heartbeat`) | done, compiles |
+| 10–11 | `/status`, `/telemetry`, faults reported as `{"available": false}` | done, compiles |
 
 ## Arduino IDE setup
 
@@ -36,6 +37,41 @@ so the Pi treats them as refused instead of guessing.
 5. **Upload.** Open `esp32_controller.ino` (the IDE opens every file in the folder),
    select the COM port and click **Upload**. If it hangs at `Connecting....`,
    hold the board's **BOOT** button until the upload starts.
+
+## Steps 3–11: arm, gripper, sensors
+
+**Updating from 0.1.0:** copy the new sections at the end of `config.example.h` (Arm, MPU6050,
+Heartbeat) into your `config.h`. The sketch won't compile until they're there, and says so.
+
+**Wiring (defaults, change in `config.h`):**
+
+| Part | ESP32 pin |
+|---|---|
+| Base / shoulder / elbow servo signal | GPIO 13 / 14 / 27 |
+| Gripper servo signal | GPIO 26 |
+| MPU6050 SDA / SCL (3.3 V, GND) | GPIO 21 / 22 |
+| Pulse sensor signal (3.3 V, GND) | GPIO 34 (must be 32–39) |
+| Optional STOP button (to GND) | set `STOP_BUTTON_PIN` |
+
+Power the servos from a separate 5–6 V supply with its GND joined to the ESP32's GND.
+
+**Calibrate before mounting:** with the servo test sketch, find each joint's safe min/max and the
+angles for every pose (HOME, SAFE, USER, MEDICINE, WATER, PHONE, SPOON). Put them in `JOINT_MIN_DEG`,
+`JOINT_MAX_DEG` and `POSE_TABLE`. At boot the firmware checks every pose against the limits; if
+one is outside, the Serial Monitor names it and all motion is refused.
+
+**How a move works:** `POST /arm/pose` answers at once with `"moving": true`, the arm moves
+smoothly (all joints arrive together, eased start and stop), and the Pi polls `/status` until
+`moving` is false. The web server never waits for a move, so `/stop` is handled immediately,
+even mid-move. After a stop every motion command answers 409 until `/resume`; resuming never
+moves the arm by itself.
+
+**Test from the Pi** (after updating `ESP32_CONTROLLER_URL`):
+
+```bash
+python scripts/test_esp32.py               # health, status, telemetry, heartbeat, IMU
+python scripts/test_arm.py --pose USER --yes   # moves the arm, checks STOP blocks motion
+```
 
 ## Steps 1–2: Wi-Fi + /health
 

@@ -106,6 +106,7 @@ class CommResult(BaseModel):
     contact: str
     backend: str
     error: str | None = None
+    call_placed: bool = False  # the bedside phone dialled automatically (no tap needed)
 
 
 class EmergencyResult(BaseModel):
@@ -128,3 +129,137 @@ class HealthResponse(BaseModel):
     status: Literal["ok", "degraded"]
     mock_hardware: bool
     components: list[ComponentHealth]
+
+
+class Detection(BaseModel):
+    label: str
+    confidence: float
+    box: tuple[float, float, float, float]  # x1, y1, x2, y2 in image pixels
+
+
+class DetectionResult(BaseModel):
+    model: str
+    image_width: int
+    image_height: int
+    inference_ms: float
+    detections: list[Detection]
+
+
+class ObjectLocation(BaseModel):
+    """What the camera says about one object. `seen` is True only when YOLO found it
+    in a recent photo; `response` is the spoken phrase either way."""
+    seen: bool
+    response: str
+    label: str | None = None
+    confidence: float | None = None
+    position: Literal["left", "middle", "right"] | None = None
+    neighbour: str | None = None
+    photo_age_s: float | None = None
+
+
+class PhoneCommandResponse(BaseModel):
+    """Result of one command from the bedside phone page. Text, vision and voice parts
+    fail independently: a broken camera or speech service never blocks the command."""
+    transcript: str | None = None  # what Sarvam heard (None when the command was typed)
+    language_code: str | None = None
+    assistant: AssistantResponse
+    vision: DetectionResult | None = None
+    vision_error: str | None = None
+    reply_text: str | None = None  # what was spoken: assistant.response, translated if the patient spoke another language
+    reply_language: str | None = None
+    reply_audio: str | None = None  # base64 WAV of reply_text
+    voice_error: str | None = None
+    dial: str | None = None  # number for the phone to open in its dialler (calls, emergencies)
+
+
+class PersonPose(BaseModel):
+    confidence: float
+    box: tuple[float, float, float, float]
+    keypoints: list[tuple[float, float, float]]  # 17 COCO keypoints: x, y, confidence
+
+
+class PoseObservation(BaseModel):
+    image_width: int
+    image_height: int
+    people: list[PersonPose]
+
+
+Posture = Literal["lying", "reclined", "upright", "unknown"]
+
+
+class CameraCondition(BaseModel):
+    """What the camera shows about the patient. Observations, never a diagnosis."""
+    available: bool  # a frame was analysed recently
+    last_frame_age_s: float | None = None
+    person_in_view: bool | None = None
+    posture: Posture | None = None
+    still_for_s: float | None = None  # time since movement was last seen (while in view)
+    not_in_view_for_s: float | None = None
+
+
+class SensorCondition(BaseModel):
+    """Latest ESP32 telemetry (hobby sensors, not clinical measurements)."""
+    available: bool
+    source: DataSource | None = None
+    age_s: float | None = None
+    heartbeat_bpm: float | None = None
+    movement_score: float | None = None
+    emergency_stop: bool | None = None
+    errors: list[str] = []
+
+
+class PatientCondition(BaseModel):
+    camera: CameraCondition
+    sensors: SensorCondition
+    attention: list[str]  # plain-language notes for the caregiver
+    attention_keys: list[str] = []  # stable ids of those notes, e.g. "attention_still"
+
+
+class DashboardEvent(BaseModel):
+    timestamp: datetime
+    kind: Literal["command", "message", "call", "emergency_alert", "attention"]
+    ok: bool
+    text: str
+
+
+class ActivitySample(BaseModel):
+    """One pose reading, as stored for activity reports."""
+    timestamp: float  # Unix time
+    in_view: bool
+    posture: Posture | None = None
+    movement: float | None = None  # keypoint shift relative to body size; None = not comparable
+    moved: bool | None = None
+
+
+class PeriodStats(BaseModel):
+    """Activity over one period, from the stored pose readings. Percentages are 0-100."""
+    start: datetime
+    end: datetime
+    readings: int
+    observed_min: float  # how long the camera was actually watching
+    enough_data: bool
+    in_view_pct: float | None = None
+    lying_pct: float | None = None
+    reclined_pct: float | None = None
+    upright_pct: float | None = None
+    active_pct: float | None = None  # share of in-view readings with movement
+    longest_still_min: float | None = None
+
+
+class DailyActivity(BaseModel):
+    day: str  # YYYY-MM-DD, local time
+    observed_min: float
+    active_pct: float | None = None
+
+
+class ActivityReport(BaseModel):
+    generated_at: datetime
+    hours: int
+    current: PeriodStats
+    previous: PeriodStats
+    trend: Literal["more_active", "less_active", "about_the_same", "not_enough_data"]
+    active_change_points: float | None = None
+    daily: list[DailyActivity]
+    highlights: list[str]  # plain sentences built from the numbers
+    ai_summary: str | None = None
+    ai_error: str | None = None

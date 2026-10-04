@@ -2,19 +2,28 @@
 // The Raspberry Pi 5 sends commands over HTTP; this board drives the arm,
 // gripper and sensors. Prototype only: no medical diagnosis.
 //
-// Build step 1-2: Wi-Fi + GET /health.
+// Build steps 1-11: Wi-Fi, HTTP API, arm + gripper with named poses, STOP/RESUME,
+// MPU6050 and pulse sensor telemetry.
 
 #include <ESPmDNS.h>
 #include <WiFi.h>
 
 #include "api_server.h"
+#include "arm.h"
 #include "config.h"
+#include "sensors.h"
 
 // Fail at compile time if config.h is missing a required setting.
 #if !defined(FIRMWARE_VERSION) || !defined(DEVICE_NAME) || !defined(SERIAL_BAUD) ||       \
     !defined(WIFI_SSID) || !defined(WIFI_PASSWORD) || !defined(WIFI_CONNECT_TIMEOUT_MS) || \
     !defined(WIFI_RETRY_INTERVAL_MS) || !defined(WIFI_USE_STATIC_IP) || !defined(MDNS_ENABLED) || \
-    !defined(HTTP_PORT)
+    !defined(HTTP_PORT) || !defined(JOINT_COUNT) || !defined(JOINT_PINS) || !defined(JOINT_NAMES) ||  \
+    !defined(JOINT_MIN_DEG) || !defined(JOINT_MAX_DEG) || !defined(GRIPPER_PIN) ||                    \
+    !defined(GRIPPER_OPEN_DEG) || !defined(GRIPPER_CLOSED_DEG) || !defined(SERVO_MIN_US) ||            \
+    !defined(SERVO_MAX_US) || !defined(ARM_SPEED_DEG_S) || !defined(GRIPPER_SPEED_DEG_S) ||            \
+    !defined(POSE_TABLE) || !defined(HOME_POSE) || !defined(STOP_BUTTON_PIN) || !defined(IMU_ENABLED) || \
+    !defined(IMU_SDA_PIN) || !defined(IMU_SCL_PIN) || !defined(HEARTBEAT_ENABLED) ||                   \
+    !defined(HEARTBEAT_PIN) || !defined(HEARTBEAT_MIN_AMPLITUDE)
 #error "config.h is missing required settings. Copy config.example.h to config.h and fill it in."
 #endif
 
@@ -141,12 +150,16 @@ void setup() {
   Serial.println();
   Serial.printf("[BOOT] %s firmware %s\n", DEVICE_NAME, FIRMWARE_VERSION);
 
+  armBegin();  // first: servos get a defined position as early as possible
+  sensorsBegin();
   startWifi();
   apiBegin();
   Serial.println("[BOOT] ready");
 }
 
 void loop() {
+  armUpdate();  // smooth motion + stop button, every pass
   apiHandle();
+  sensorsUpdate();
   maintainWifi();
 }

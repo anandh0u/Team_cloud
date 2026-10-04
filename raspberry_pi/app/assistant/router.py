@@ -15,7 +15,7 @@ from app.assistant.responses import Responses
 from app.communication.caregiver import CaregiverService
 from app.hardware.arm import ArmService
 from app.hardware.telemetry import TelemetryService
-from app.models import Action, ArmActionResult, AssistantResponse, Intent
+from app.models import Action, ArmActionResult, AssistantResponse, Intent, ObjectLocation
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -28,10 +28,9 @@ RESPONSE_KEYS = (
 
 
 class ObjectLocator(Protocol):
-    """Implemented by the vision layer (phone camera + YOLO) in a later phase.
-    Returns a spoken phrase describing where the object is, or None if not seen."""
+    """Implemented by the vision layer (phone camera + YOLO, app/vision/locator.py)."""
 
-    async def describe_location(self, obj: str) -> str | None: ...
+    async def describe_location(self, obj: str) -> ObjectLocation: ...
 
 
 class AssistantRouter:
@@ -99,8 +98,8 @@ class AssistantRouter:
             return self._reply(intent, False, self._r.get("object_unknown"))
         if self.locator is None:
             return self._reply(intent, False, self._r.get("find_no_camera", object=intent.object), camera="none")
-        phrase = await self.locator.describe_location(intent.object)
-        return self._reply(intent, phrase is not None, phrase or self._r.get("find_no_camera", object=intent.object))
+        location = await self.locator.describe_location(intent.object)
+        return self._reply(intent, location.seen, location.response, camera=location.model_dump(mode="json"))
 
     async def _get(self, intent: Intent) -> AssistantResponse:
         if intent.object is None:

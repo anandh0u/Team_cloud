@@ -109,3 +109,51 @@ def test_non_json_body_gives_no_data():
     client, _ = make_client(lambda r: httpx.Response(200, text="OK"))
     res = run(client.arm_home())
     assert res.ok and res.data is None
+
+
+# ---------------------------------------------------------------- waiting for motion
+
+def _moving_controller(statuses):
+    """POST /arm/pose answers "moving"; each GET /status returns the next of `statuses`."""
+    import httpx
+    from app.hardware.esp32_client import HttpEsp32Client
+    replies = iter(statuses)
+    polls = []
+
+    def handler(request):
+        if request.method == "POST":
+            return httpx.Response(200, json={"ok": True, "pose": "MEDICINE", "moving": True})
+        polls.append(1)
+        return next(replies)
+
+    client = HttpEsp32Client("http://esp32.test", timeout_s=1, retries=0, backoff_s=0, move_timeout_s=0.3,
+                             poll_s=0.01, transport=httpx.MockTransport(handler))
+    return client, polls
+
+
+def _status(moving, stop=False):
+    import httpx
+    return httpx.Response(200, json={"arm": {"pose": "MEDICINE", "moving": moving}, "emergency_stop": stop})
+
+
+def test_motion_waits_until_the_arm_is_still():
+    import asyncio
+    client, polls = _moving_controller([_status(True), _status(True), _status(False)])
+    result = asyncio.run(client.arm_pose("MEDICINE"))
+    assert result.ok and result.data["moving"] is False and len(polls) == 3
+
+
+def test_stop_during_motion_fails_the_step():
+    import asyncio
+    client, _ = _moving_controller([_status(True), _status(False, stop=True)])
+    result = asyncio.run(client.arm_pose("MEDICINE"))
+    assert not result.ok and "emergency stop" in result.error
+
+
+def test_motion_that_never_finishes_fails():
+    import asyncio
+    import itertools
+    import httpx
+    client, _ = _moving_controller(itertools.repeat(httpx.Response(200, json={"arm": {"moving": True}})))
+    result = asyncio.run(client.arm_pose("MEDICINE"))
+    assert not result.ok and "did not finish" in result.error

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caregiver dashboard</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #0f172a; color: #e2e8f0; }
+  h1 { font-size: 1.3rem; margin: 0; }
+  h2 { font-size: 1rem; margin: 0 0 8px; color: #94a3b8; font-weight: 600; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .pill { padding: 4px 10px; border-radius: 999px; background: #1e293b; font-size: .85rem; color: #94a3b8; }
+  .pill.live { color: #86efac; }
+  .pill.stale { color: #fca5a5; }
+  #attention { padding: 14px 16px; border-radius: 12px; margin-bottom: 14px; font-size: 1.1rem; font-weight: 600; }
+  #attention.ok { background: #14532d; color: #bbf7d0; }
+  #attention.warn { background: #7f1d1d; color: #fecaca; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .card { background: #1e293b; border-radius: 12px; padding: 12px 14px; }
+  .card .label { font-size: .8rem; color: #94a3b8; }
+  .card .value { font-size: 1.4rem; font-weight: 700; margin-top: 4px; }
+  .card .note { font-size: .75rem; color: #64748b; margin-top: 4px; }
+  .columns { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 14px; }
+  @media (max-width: 800px) { .columns { grid-template-columns: 1fr; } }
+  #camera { position: relative; background: #000; border-radius: 12px; overflow: hidden; min-height: 120px; }
+  #camera img, #camera canvas { width: 100%; display: block; }
+  #camera canvas { position: absolute; inset: 0; height: 100%; }
+  #noframe { padding: 40px 16px; text-align: center; color: #64748b; }
+  #events { list-style: none; padding: 0; margin: 0; max-height: 520px; overflow-y: auto; }
+  #events li { background: #1e293b; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; font-size: .9rem; border-left: 4px solid #334155; }
+  #events li.bad { border-left-color: #ef4444; }
+  #events li.emergency_alert { border-left-color: #ef4444; background: #3f1d1d; }
+  #events time { color: #64748b; font-size: .75rem; display: block; }
+  footer { margin-top: 16px; font-size: .75rem; color: #64748b; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Caregiver dashboard</h1>
+  <div><a href="/report" class="pill" style="color:#e2e8f0;text-decoration:none">📊 Activity report</a>
+    <span id="link" class="pill">connecting…</span> <span id="backend" class="pill"></span></div>
+</header>
+<div id="attention" class="ok">Loading…</div>
+
+<div class="grid">
+  <div class="card"><div class="label">Position</div><div class="value" id="posture">–</div><div class="note">from the camera</div></div>
+  <div class="card"><div class="label">Last movement</div><div class="value" id="moved">–</div><div class="note">from the camera</div></div>
+  <div class="card"><div class="label">In camera view</div><div class="value" id="inview">–</div><div class="note" id="frameage"></div></div>
+  <div class="card"><div class="label">Pulse sensor</div><div class="value" id="bpm">–</div><div class="note">hobby sensor, not a medical reading</div></div>
+  <div class="card"><div class="label">Motion sensor</div><div class="value" id="motion">–</div><div class="note" id="sensornote"></div></div>
+</div>
+
+<div class="columns">
+  <section>
+    <h2>Camera</h2>
+    <div id="camera"><div id="noframe">No picture yet. Open the bedside phone page and start the camera.</div>
+      <img id="frame" alt="Latest bedside camera picture" hidden><canvas id="boxes" hidden></canvas></div>
+  </section>
+  <section>
+    <h2>Recent activity</h2>
+    <ul id="events"></ul>
+  </section>
+</div>
+<footer>Prototype. Not a medical device: positions and movement are rough camera observations, and the pulse sensor is not clinically accurate.</footer>
+
+<script>
+const REFRESH_MS = 2000;
+const $ = id => document.getElementById(id);
+let lastFrameAt = null, lastScene = null;
+
+function ago(seconds) {
+  if (seconds == null) return "–";
+  if (seconds < 60) return "just now";
+  const m = Math.floor(seconds / 60);
+  return m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ${m % 60} min ago`;
+}
+
+function drawBoxes() {
+  const img = $("frame"), canvas = $("boxes");
+  if (!lastScene || !img.naturalWidth) return;
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext("2d"), scale = img.naturalWidth / lastScene.image_width;
+  ctx.lineWidth = Math.max(2, canvas.width / 300);
+  ctx.font = `${Math.max(14, canvas.width / 40)}px system-ui`;
+  for (const d of lastScene.detections) {
+    const [x1, y1, x2, y2] = d.box.map(v => v * scale), text = d.label, h = parseInt(ctx.font, 10) + 6;
+    ctx.strokeStyle = ctx.fillStyle = "#22c55e";
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    ctx.fillRect(x1, Math.max(0, y1 - h), ctx.measureText(text).width + 8, h);
+    ctx.fillStyle = "#000";
+    ctx.fillText(text, x1 + 4, Math.max(h - 6, y1 - 6));
+  }
+  canvas.hidden = false;
+}
+$("frame").addEventListener("load", drawBoxes);
+
+function render(s) {
+  const c = s.condition, cam = c.camera, sen = c.sensors;
+  const att = $("attention");
+  att.className = c.attention.length ? "warn" : "ok";
+  att.textContent = c.attention.length ? "⚠ " + c.attention.join("  ·  ") : "✓ Nothing needs attention right now";
+
+  $("posture").textContent = cam.available && cam.person_in_view ? (cam.posture || "unknown") : "–";
+  $("moved").textContent = cam.available && cam.person_in_view ? ago(cam.still_for_s) : "–";
+  $("inview").textContent = !cam.available ? "camera off" : cam.person_in_view ? "yes"
+    : `no (${ago(cam.not_in_view_for_s).replace(" ago", "")})`;
+  $("frameage").textContent = cam.last_frame_age_s != null ? `picture ${ago(cam.last_frame_age_s)}` : "";
+
+  const sensorTag = sen.source === "MOCK" ? " (simulated)" : "";
+  $("bpm").textContent = sen.available && sen.heartbeat_bpm != null ? `${Math.round(sen.heartbeat_bpm)} bpm${sensorTag}` : "–";
+  $("motion").textContent = sen.available && sen.movement_score != null ? `${sen.movement_score.toFixed(2)}${sensorTag}` : "–";
+  $("sensornote").textContent = sen.available ? `updated ${ago(sen.age_s)}` : (sen.errors[0] || "not connected");
+
+  $("backend").textContent = `messages: ${s.communication_backend}` + (s.mock_hardware ? " · simulated hardware" : "");
+
+  if (s.frame_at && s.frame_at !== lastFrameAt) {
+    lastFrameAt = s.frame_at;
+    lastScene = s.scene;
+    $("noframe").hidden = true;
+    $("frame").hidden = false;
+    $("frame").src = `/dashboard/frame.jpg?t=${encodeURIComponent(s.frame_at)}`;
+  }
+
+  const list = $("events");
+  list.innerHTML = "";
+  for (const e of s.events) {
+    const li = document.createElement("li");
+    li.className = `${e.kind}${e.ok ? "" : " bad"}`;
+    const t = document.createElement("time");
+    t.textContent = new Date(e.timestamp).toLocaleTimeString();
+    li.append(t, document.createTextNode(e.text));
+    list.appendChild(li);
+  }
+  if (!s.events.length) list.innerHTML = "<li>No activity yet.</li>";
+}
+
+async function refresh() {
+  try {
+    const res = await fetch("/dashboard/state", { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    render(await res.json());
+    $("link").textContent = "● live";
+    $("link").className = "pill live";
+  } catch (err) {
+    $("link").textContent = "● connection lost";
+    $("link").className = "pill stale";
+  } finally {
+    setTimeout(refresh, REFRESH_MS);
+  }
+}
+refresh();
+</script>
+</body>
+</html>

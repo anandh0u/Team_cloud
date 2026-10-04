@@ -8,6 +8,7 @@ are sent at most once: a timed-out move is reported as failed, never re-sent.
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any, Protocol
 
@@ -43,13 +44,16 @@ class HttpEsp32Client:
     source = DataSource.DEVICE
 
     def __init__(self, base_url: str, timeout_s: float, retries: int, backoff_s: float,
+                 move_timeout_s: float = 20.0, poll_s: float = 0.2,
                  transport: httpx.AsyncBaseTransport | None = None):
         self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout_s, transport=transport)
         self._retries = retries
         self._backoff_s = backoff_s
+        self._move_timeout_s = move_timeout_s
+        self._poll_s = poll_s
 
     async def _request(self, method: str, path: str, *, repeatable: bool,
-                       json: dict[str, Any] | None = None) -> ControllerResult:
+                       json: dict[str, Any] | None = None, quiet: bool = False) -> ControllerResult:
         endpoint = f"{method} {path}"
         attempts = 1 + self._retries if repeatable else 1
         started = time.perf_counter()
@@ -78,7 +82,7 @@ class HttpEsp32Client:
         if ok and data is not None and data.get("ok") is False:
             ok = False
             error = f"controller refused: {data.get('error', 'ok=false')}"
-        log = logger.info if ok else logger.warning
+        log = (logger.debug if quiet else logger.info) if ok else logger.warning
         log("esp32 %s -> %d in %.0f ms", endpoint, response.status_code, elapsed())
         return ControllerResult(ok=ok, endpoint=endpoint, source=self.source,
                                 status_code=response.status_code, data=data,
@@ -99,17 +103,38 @@ class HttpEsp32Client:
     async def imu(self) -> ControllerResult:
         return await self._request("GET", "/imu", repeatable=True)
 
+    async def _motion(self, path: str, json: dict[str, Any] | None = None) -> ControllerResult:
+        """Motion commands return at once with "moving": true, so the controller stays free
+        to accept /stop while the arm moves. Here we wait for the move to finish by polling
+        /status; the step only counts as done once the arm is still."""
+        result = await self._request("POST", path, repeatable=False, json=json)
+        if not result.ok or not (result.data or {}).get("moving"):
+            return result
+        deadline = time.perf_counter() + self._move_timeout_s
+        while time.perf_counter() < deadline:
+            await asyncio.sleep(self._poll_s)
+            status = await self._request("GET", "/status", repeatable=True, quiet=True)
+            if not status.ok or status.data is None:
+                continue  # a missed poll isn't a failed move; keep watching until the deadline
+            if status.data.get("emergency_stop"):
+                logger.warning("esp32 %s interrupted by emergency stop", result.endpoint)
+                return result.model_copy(update={"ok": False, "error": "stopped during motion (emergency stop)"})
+            if not (status.data.get("arm") or {}).get("moving"):
+                return result.model_copy(update={"data": {**result.data, "moving": False}})
+        logger.error("esp32 %s did not finish within %.0f s", result.endpoint, self._move_timeout_s)
+        return result.model_copy(update={"ok": False, "error": f"motion did not finish within {self._move_timeout_s:.0f} s"})
+
     async def arm_home(self) -> ControllerResult:
-        return await self._request("POST", "/arm/home", repeatable=False)
+        return await self._motion("/arm/home")
 
     async def arm_pose(self, pose: str) -> ControllerResult:
-        return await self._request("POST", "/arm/pose", repeatable=False, json={"pose": pose})
+        return await self._motion("/arm/pose", json={"pose": pose})
 
     async def gripper_open(self) -> ControllerResult:
-        return await self._request("POST", "/gripper/open", repeatable=False)
+        return await self._motion("/gripper/open")
 
     async def gripper_close(self) -> ControllerResult:
-        return await self._request("POST", "/gripper/close", repeatable=False)
+        return await self._motion("/gripper/close")
 
     async def stop(self) -> ControllerResult:
         return await self._request("POST", "/stop", repeatable=True)
@@ -146,4 +171,5 @@ def build_controller(settings: Settings, poses: PoseCatalog) -> ControllerClient
         timeout_s=settings.esp32_http_timeout_s,
         retries=settings.esp32_http_retries,
         backoff_s=settings.esp32_retry_backoff_s,
+        move_timeout_s=settings.esp32_move_timeout_s,
     )
