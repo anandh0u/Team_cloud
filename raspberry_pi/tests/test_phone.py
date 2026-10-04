@@ -365,3 +365,21 @@ def test_uncalibrated_pose_is_never_used(table, mock_client, responses):
     reply = say(table, "I want spoon")
     assert not reply["ok"] and reply["response"] == responses.get("get_not_calibrated", object="spoon")
     assert mock_client.pose == "HOME"
+
+
+def test_object_seen_in_a_recent_frame_still_counts(locator, clock):
+    # Handheld phone: the spoon is in one frame and missed in the next ones.
+    locator.update(scene(det("spoon", 500, confidence=0.4)))
+    clock.now += 4
+    locator.update(scene(det("laptop", 10)))
+    clock.now += 4
+    locator.update(scene())
+    res = run(locator.describe_location("spoon"))
+    assert res.seen and res.position == "right" and res.photo_age_s == 8
+
+
+def test_old_sightings_are_forgotten(locator, clock):
+    locator.update(scene(det("spoon", 500)))
+    clock.now += 11
+    locator.update(scene(det("laptop", 10)))
+    assert run(locator.describe_location("spoon")).reason == "not_seen"
