@@ -92,3 +92,21 @@ def test_object_to_pose_mapping(poses):
     for obj, pose in poses.object_to_pose.items():
         assert poses.pose_for_object(obj.upper()) == pose
     assert poses.pose_for_object("television") is None
+
+
+def test_imu_without_gravity_is_dropped_as_implausible():
+    # MPU6050 clones (chip id 0x70) can return a dead accelerometer: all zeros.
+    import asyncio
+    from app.hardware.telemetry import TelemetryService
+    from app.models import ControllerResult, DataSource
+
+    class Fake:
+        async def telemetry(self):
+            return ControllerResult(ok=True, endpoint="GET /telemetry", source=DataSource.DEVICE, data={
+                "heartbeat": {"available": False},
+                "imu": {"available": True, "ax": 0, "ay": 0.002, "az": 0.005, "gx": 0.12, "gy": 0.15, "gz": 0.18,
+                        "movement_score": 9.81},
+                "arm": {"pose": "HOME", "moving": False}, "gripper": "OPEN", "emergency_stop": False})
+
+    snap = asyncio.run(TelemetryService(Fake()).snapshot())
+    assert snap.imu is None and any("implausible" in e for e in snap.errors)

@@ -10,6 +10,7 @@ controller doesn't answer, the snapshot is unavailable with no values at all.
 """
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Any
 
@@ -50,6 +51,23 @@ def _typed(data: dict[str, Any], key: str, kind: type, errors: list[str]):
     return value
 
 
+# A working accelerometer always feels gravity (9.81 m/s^2) plus movement. A total far
+# outside this band means the sensor isn't really measuring (seen on MPU6050 clones whose
+# accelerometer reads zero), so the reading is dropped rather than shown.
+PLAUSIBLE_ACCEL_MS2 = (4.0, 30.0)
+
+
+def _plausible_imu(imu: ImuReading | None, errors: list[str]) -> ImuReading | None:
+    if imu is None:
+        return None
+    total = math.sqrt(imu.ax ** 2 + imu.ay ** 2 + imu.az ** 2)
+    if not PLAUSIBLE_ACCEL_MS2[0] <= total <= PLAUSIBLE_ACCEL_MS2[1]:
+        errors.append(f"imu: implausible reading (acceleration {total:.1f} m/s², expected about 9.8)")
+        logger.warning("imu reading dropped: total acceleration %.2f m/s^2 is not plausible", total)
+        return None
+    return imu
+
+
 class TelemetryService:
     def __init__(self, client: ControllerClient):
         self._client = client
@@ -64,7 +82,7 @@ class TelemetryService:
         data = result.data or {}
         errors: list[str] = []
         heartbeat = _section(data, "heartbeat", HeartbeatReading, errors)
-        imu = _section(data, "imu", ImuReading, errors)
+        imu = _plausible_imu(_section(data, "imu", ImuReading, errors), errors)
         arm = _typed(data, "arm", dict, errors)
         gripper = _typed(data, "gripper", str, errors)
         emergency_stop = _typed(data, "emergency_stop", bool, errors)
